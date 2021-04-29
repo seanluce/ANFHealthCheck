@@ -113,9 +113,9 @@ $volumeConsumedSizes = @{}
 $poolCapacities = @{}
 $netAppRegions = @()
 
-$cred = Get-AutomationPSCredential -Name "luces"
+#$cred = Get-AutomationPSCredential -Name "YOURCREDS"
 
-Connect-AzAccount -ServicePrincipal -Credential $cred -Tenant "890df2fb-c027-40fc-88ad-7dc5308deacc"
+#Connect-AzAccount -ServicePrincipal -Credential $cred -Tenant "YOURTENANT"
 
 $Subscriptions = Get-AzSubscription
 
