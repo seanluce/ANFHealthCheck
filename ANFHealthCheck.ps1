@@ -16,6 +16,9 @@ $volumeSnapTooOldWarning = 1 #days? #todo
 # add module for detailed snapshot view
 # add module for detailed CRR view
 
+# Connects as AzureRunAsConnection from Automation to ARM
+$connection = Get-AutomationConnection -Name AzureRunAsConnection
+Connect-AzAccount -ServicePrincipal -Tenant $connection.TenantID -ApplicationId $connection.ApplicationID -CertificateThumbprint $connection.CertificateThumbprint
 
 function Send-Email() {
     $Username ="YOURSENDGRIDUSERNAME@azure.com" # Your user name - found in SendGrid portal
