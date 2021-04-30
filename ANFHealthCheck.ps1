@@ -5,7 +5,8 @@ Import-Module Az.Monitor
 
 #User Modifiable Parameters
 $volumePercentFullWarning = 80
-$volumeSnapTooOldWarning = 1 #days? #todo
+$oldestSnapTooOldThreshold = 10 #days #TODO
+$mostRecentSnapTooOldThreshold = 24 #hours #TODO
 
 ### TODO ###
 # map locations to human readable
@@ -109,6 +110,24 @@ function Show-ANFCapacityPoolUtilization() {
     $finalResult += '</table><br>'
     return $finalResult
 }
+function Show-ANFVolumeUtilizationAboveThreshold() {
+    #####
+    ## Display ANF Volumes with Used Percentages above Threshold
+    #####
+    $finalResult += '<h3>Volume Utilization Above ' + $volumePercentFullWarning + '%</h3>'
+    $finalResult += '<table>'
+    $finalResult += '<th>Volume Name</th><th>Location</th><th class="center">Provisioned (GiB)</th><th class="center">Consumed (GiB)</th><th class="center">Consumed (%)</th>'
+        foreach($volume in $volumes) {   
+            $volumeDetail = Get-AzNetAppFilesVolume -ResourceId $volume.ResourceId
+            $volumePercentConsumed = [Math]::Round(($volumeConsumedSizes[$volume.ResourceId]/$volumeDetail.UsageThreshold)*100,2)
+            if($volumePercentConsumed -ge $volumePercentFullWarning) {
+                $finalResult += '<tr><td><a href="https://portal.azure.com/#@' + $Subscription.TenantId + '/resource' + $volume.ResourceId + '">' + $volumeDetail.name.split('/')[2] + '</a></td><td>' + $volumeDetail.Location + '</td><td class="center">' + $volumeDetail.UsageThreshold/1024/1024/1024 + '</td><td class="center">' + [Math]::Round($volumeConsumedSizes[$volume.ResourceId]/1024/1024/1024,0) + '</td>'
+                $finalResult += '<td class="warning">' + $volumePercentConsumed + '%</td></tr>'
+            } 
+    }
+    $finalResult += '</table><br>'
+    return $finalResult
+}
 function Show-ANFVolumeUtilization() {
     #####
     ## Display ANF Volumes with Used Percentages
@@ -137,23 +156,30 @@ function Show-ANFVolumeProtectionStatus() {
     #####
     $finalResult += '<h3>Volume Protection Status</h3>'
     $finalResult += '<table>'
-    $finalResult += '<th>Volume Name</th><th class="center">Snapshot Policy</th><th>Policy Name</th><th class="center">Recent Snapshot</th><th class="center">Replication</th><th class="center">Schedule</th>'
+    $finalResult += '<th>Volume Name</th><th class="center">Snapshot Policy</th><th>Policy Name</th><th class="center">Oldest Snap</th><th class="center">Newest Snap</th><th class="center">Replication</th><th class="center">Schedule</th>'
         foreach($volume in $volumes) {
             $volumeDetail = @()
             $volumeSnaps = @()
             $mostRecentSnapDisplay = $null
+            $oldestSnapDisplay = $null
             $volumeDetail = Get-AzNetAppFilesVolume -ResourceId $volume.ResourceId
             $volumeSnaps = Get-AzNetAppFilesSnapshot -ResourceGroupName $volume.ResourceId.split('/')[4] -AccountName $volume.ResourceId.split('/')[8] -PoolName $volume.ResourceId.split('/')[10] -VolumeName $volume.ResourceId.split('/')[12]
             if($volumeSnaps) {
                 $mostRecentSnapDate = $volumeSnaps[0].Created
+                $oldestSnapDate = $volumeSnaps[0].Created
                 foreach($volumeSnap in $volumeSnaps){
                     if($volumeSnap.Created -gt $mostRecentSnapDate) {
                         $mostRecentSnapDate = $volumeSnap.Created
                     }
+                    if($volumeSnap.Created -lt $oldestSnapDate) {
+                        $oldestSnapDate = $volumeSnap.Created
+                    }
                 }
                 $mostRecentSnapDisplay = '<td>' + $mostRecentSnapDate.ToString("MM-dd-yy hh:mm tt") + '</td>'
+                $oldestSnapDisplay = '<td>' + $oldestSnapDate.ToString("MM-dd-yy hh:mm tt") + '</td>'
             } else {
                 $mostRecentSnapDisplay = '<td class="warning">None</td>'
+                $oldestSnapDisplay = '<td class="warning">None</td>'
             }
             $finalResult += '<tr>' + '<td><a href="https://portal.azure.com/#@' + $Subscription.TenantId + '/resource' + $volume.ResourceId + '">' + $volumeDetail.name.split('/')[2] + '</a></td>'
             if($volumeDetail.DataProtection.Snapshot.SnapshotPolicyId) {
@@ -164,6 +190,7 @@ function Show-ANFVolumeProtectionStatus() {
                 $snapshotPolicyDisplay = 'No'
                 $finalResult += '<td class="warning center">' + $snapshotPolicyDisplay + '</td><td></td>'
             }
+            $finalResult += $oldestSnapDisplay
             $finalResult += $mostRecentSnapDisplay
             if($volumeDetail.DataProtection.Replication.endPointType) {
                 if($volumeDetail.DataProtection.Replication.endPointType -eq 'Src') {
@@ -199,7 +226,10 @@ $finalResult = @'
                 <style>
                     * {
                         font-family: arial, helvetica, sans-serif;
-                        color: #4D4D4D;
+                        color: #757575;
+                    }
+                    p {
+                        font-size: 80%;
                     }
                     a:link {
                         color: #5278FF;
@@ -217,25 +247,35 @@ $finalResult = @'
                         color: #2958FF;
                         text-decoration: none;
                     }
-
-                    
+                    tr:hover {
+                        background-color: #F2F2F2;
+                    }
+                    h2 {
+                        color: #757575;
+                    }
                     h3 {
-                        color: #4D4D4D;
+                        color: #757575;
                         margin: 4px;
                     }
                     table, th, td, tr {
                         border-collapse: collapse;
                         text-align: left;
                     }
-                    th {
+                    tr:nth-child(odd) {
                         background-color: #F2F2F2;
-                        color: #4D4D4D;
+                    }
+                    th {
+                        background-color: #2958FF;
+                        color: #FFFFFF;
                         font-weight: normal;
                     }
                     th, td {
                         border-bottom: 1px solid #ddd;
-                        font-size: 90%;
-                        padding: 5px;
+                        font-size: 80%;
+                        padding-top: 7px;
+                        padding-bottom: 7px;
+                        padding-left: 10px;
+                        padding-right: 10px;
                     }
                     .warning {
                         color: #DB2841;
@@ -264,13 +304,14 @@ foreach ($Subscription in $Subscriptions) {
 
     $finalResult += Show-ANFNetAppAccountSummary
     $finalResult += Show-ANFCapacityPoolUtilization
+    $finalResult += Show-ANFVolumeUtilizationAboveThreshold
     $finalResult += Show-ANFVolumeUtilization
     $finalResult += Show-ANFVolumeProtectionStatus
 
 }
 
 ## Close our body and html tags
-$finalResult += '</body></html>'
+$finalResult += '<br><p>Created by <a href="https://github.com/seanluce">Sean Luce</a>, Cloud Solutions Architect @<a href="https://cloud.netapp.com">NetApp</a></p></body></html>'
 
 ## Send the HTML via email
 Send-Email
