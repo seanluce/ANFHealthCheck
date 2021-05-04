@@ -5,19 +5,18 @@ Import-Module Az.Monitor
 
 #User Modifiable Parameters
 $volumePercentFullWarning = 80
-$oldestSnapTooOldThreshold = 10 #days #TODO
-$mostRecentSnapTooOldThreshold = 24 #hours #TODO
+$oldestSnapTooOldThreshold = 30 #days
+$mostRecentSnapTooOldThreshold = 48 #hours
 
 ### TODO ###
 # map locations to human readable
-# link to resources inline
 # time offset?
 # add module for detailed snapshot view
 # add module for detailed CRR view
 
 # Connects as AzureRunAsConnection from Automation to ARM
-# $connection = Get-AutomationConnection -Name AzureRunAsConnection
-# Connect-AzAccount -ServicePrincipal -Tenant $connection.TenantID -ApplicationId $connection.ApplicationID -CertificateThumbprint $connection.CertificateThumbprint
+$connection = Get-AutomationConnection -Name AzureRunAsConnection
+Connect-AzAccount -ServicePrincipal -Tenant $connection.TenantID -ApplicationId $connection.ApplicationID -CertificateThumbprint $connection.CertificateThumbprint
 
 # Connects using custom credentials if AzureRunAsConnection can't be used
 # $credentials = Get-AutomationPSCredential -Name "YOURCREDS"
@@ -156,10 +155,11 @@ function Show-ANFVolumeProtectionStatus() {
     #####
     $finalResult += '<h3>Volume Protection Status</h3>'
     $finalResult += '<table>'
-    $finalResult += '<th>Volume Name</th><th class="center">Snapshot Policy</th><th>Policy Name</th><th class="center">Oldest Snap</th><th class="center">Newest Snap</th><th class="center">Replication</th><th class="center">Schedule</th>'
+    $finalResult += '<th>Volume Name</th><th class="center">Snapshot Policy</th><th>Policy Name</th><th class="center">Oldest Snap</th><th class="center">Newest Snap</th><th>No. Snaps</th><th class="center">Replication</th><th class="center">Schedule</th>'
         foreach($volume in $volumes) {
             $volumeDetail = @()
             $volumeSnaps = @()
+            $snapCount = 0
             $mostRecentSnapDisplay = $null
             $oldestSnapDisplay = $null
             $volumeDetail = Get-AzNetAppFilesVolume -ResourceId $volume.ResourceId
@@ -168,6 +168,7 @@ function Show-ANFVolumeProtectionStatus() {
                 $mostRecentSnapDate = $volumeSnaps[0].Created
                 $oldestSnapDate = $volumeSnaps[0].Created
                 foreach($volumeSnap in $volumeSnaps){
+                    $snapCount += 1
                     if($volumeSnap.Created -gt $mostRecentSnapDate) {
                         $mostRecentSnapDate = $volumeSnap.Created
                     }
@@ -175,8 +176,16 @@ function Show-ANFVolumeProtectionStatus() {
                         $oldestSnapDate = $volumeSnap.Created
                     }
                 }
-                $mostRecentSnapDisplay = '<td>' + $mostRecentSnapDate.ToString("MM-dd-yy hh:mm tt") + '</td>'
-                $oldestSnapDisplay = '<td>' + $oldestSnapDate.ToString("MM-dd-yy hh:mm tt") + '</td>'
+                if($mostRecentSnapDate -le (Get-Date).AddHours(-($mostRecentSnapTooOldThreshold))) {
+                    $mostRecentSnapDisplay = '<td class="warning">' + $mostRecentSnapDate.ToString("MM-dd-yy hh:mm tt") + '</td>'
+                } else {
+                    $mostRecentSnapDisplay = '<td>' + $mostRecentSnapDate.ToString("MM-dd-yy hh:mm tt") + '</td>'
+                }
+                if($oldestSnapDate -le (Get-Date).AddDays(-($oldestSnapTooOldThreshold))) {
+                    $oldestSnapDisplay = '<td class="warning">' + $oldestSnapDate.ToString("MM-dd-yy hh:mm tt") + '</td>'
+                } else {
+                    $oldestSnapDisplay = '<td>' + $oldestSnapDate.ToString("MM-dd-yy hh:mm tt") + '</td>'
+                }
             } else {
                 $mostRecentSnapDisplay = '<td class="warning">None</td>'
                 $oldestSnapDisplay = '<td class="warning">None</td>'
@@ -192,6 +201,7 @@ function Show-ANFVolumeProtectionStatus() {
             }
             $finalResult += $oldestSnapDisplay
             $finalResult += $mostRecentSnapDisplay
+            $finalResult += '<td>' + $snapCount + '</td>'
             if($volumeDetail.DataProtection.Replication.endPointType) {
                 if($volumeDetail.DataProtection.Replication.endPointType -eq 'Src') {
                     $replicationDisplay = 'Yes'
