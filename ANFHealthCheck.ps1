@@ -350,4 +350,4 @@ $finalResult += '<br><p>Created by <a href="https://github.com/seanluce">Sean Lu
 Send-Email
 
 ## If you want to run this script locally or for development purposes uncomment out this line below to have the ouput saved locally
-finalResult | out-file -filepath 'output.html'
+#$finalResult | out-file -filepath 'output.html'
