@@ -113,15 +113,27 @@ function Show-ANFVolumeUtilizationAboveThreshold() {
     #####
     ## Display ANF Volumes with Used Percentages above Threshold
     #####
-    $finalResult += '<h3>Volume Utilization Above ' + $volumePercentFullWarning + '%</h3>'
+    $volumeObjects = @()
+    $finalResult += '<h3>Volume Utilization</h3>'
     $finalResult += '<table>'
+    foreach($volume in $volumes) {
+        $volumeDetail = Get-AzNetAppFilesVolume -ResourceId $volume.ResourceId
+        $volumePercentConsumed = [Math]::Round(($volumeConsumedSizes[$volume.ResourceId]/$volumeDetail.UsageThreshold)*100,2)
+        $volumeCustomObject = [PSCustomObject]@{
+            Name = $volumeDetail.name.split('/')[2]
+            URL = 'https://portal.azure.com/#@' + $Subscription.TenantId + '/resource' + $volume.ResourceId
+            Location = $volumeDetail.Location
+            Provisioned = $volumeDetail.name.split('/')[2]
+            Consumed = [Math]::Round($volumeConsumedSizes[$volume.ResourceId]/1024/1024/1024,0)
+            ConsumedPercent = $volumePercentConsumed
+        }
+        $volumeObjects += $volumeCustomObject
+    }
     $finalResult += '<th>Volume Name</th><th>Location</th><th class="center">Provisioned (GiB)</th><th class="center">Consumed (GiB)</th><th class="center">Consumed (%)</th>'
-        foreach($volume in $volumes) {   
-            $volumeDetail = Get-AzNetAppFilesVolume -ResourceId $volume.ResourceId
-            $volumePercentConsumed = [Math]::Round(($volumeConsumedSizes[$volume.ResourceId]/$volumeDetail.UsageThreshold)*100,2)
-            if($volumePercentConsumed -ge $volumePercentFullWarning) {
-                $finalResult += '<tr><td><a href="https://portal.azure.com/#@' + $Subscription.TenantId + '/resource' + $volume.ResourceId + '">' + $volumeDetail.name.split('/')[2] + '</a></td><td>' + $volumeDetail.Location + '</td><td class="center">' + $volumeDetail.UsageThreshold/1024/1024/1024 + '</td><td class="center">' + [Math]::Round($volumeConsumedSizes[$volume.ResourceId]/1024/1024/1024,0) + '</td>'
-                $finalResult += '<td class="warning">' + $volumePercentConsumed + '%</td></tr>'
+        foreach($volume in $volumeObjects | Sort-Object -Property ConsumedPercent -Descending) {  
+            if($volume.ConsumedPercent -ge $volumePercentFullWarning) {
+                $finalResult += '<tr><td><a href="' + $volume.URL + '">' + $volume.Name + '</a></td><td>' + $volume.Location + '</td><td class="center">' + $volume.Provisioned + '</td><td class="center">' + $volume.Consumed + '</td>'
+                $finalResult += '<td>' + $volume.ConsumedPercent + '%</td></tr>'
             } 
     }
     $finalResult += '</table><br>'
@@ -131,23 +143,34 @@ function Show-ANFVolumeUtilization() {
     #####
     ## Display ANF Volumes with Used Percentages
     #####
+    $volumeObjects = @()
     $finalResult += '<h3>Volume Utilization</h3>'
     $finalResult += '<table>'
+    foreach($volume in $volumes) {
+        $volumeDetail = Get-AzNetAppFilesVolume -ResourceId $volume.ResourceId
+        $volumePercentConsumed = [Math]::Round(($volumeConsumedSizes[$volume.ResourceId]/$volumeDetail.UsageThreshold)*100,2)
+        $volumeCustomObject = [PSCustomObject]@{
+            Name = $volumeDetail.name.split('/')[2]
+            URL = 'https://portal.azure.com/#@' + $Subscription.TenantId + '/resource' + $volume.ResourceId
+            Location = $volumeDetail.Location
+            Provisioned = $volumeDetail.name.split('/')[2]
+            Consumed = [Math]::Round($volumeConsumedSizes[$volume.ResourceId]/1024/1024/1024,0)
+            ConsumedPercent = $volumePercentConsumed
+        }
+        $volumeObjects += $volumeCustomObject
+    }
     $finalResult += '<th>Volume Name</th><th>Location</th><th class="center">Provisioned (GiB)</th><th class="center">Consumed (GiB)</th><th class="center">Consumed (%)</th>'
-        foreach($volume in $volumes) {   
-            $volumeDetail = Get-AzNetAppFilesVolume -ResourceId $volume.ResourceId
-            $volumePercentConsumed = [Math]::Round(($volumeConsumedSizes[$volume.ResourceId]/$volumeDetail.UsageThreshold)*100,2)
-            $finalResult += '<tr><td><a href="https://portal.azure.com/#@' + $Subscription.TenantId + '/resource' + $volume.ResourceId + '">' + $volumeDetail.name.split('/')[2] + '</a></td><td>' + $volumeDetail.Location + '</td><td class="center">' + $volumeDetail.UsageThreshold/1024/1024/1024 + '</td><td class="center">' + [Math]::Round($volumeConsumedSizes[$volume.ResourceId]/1024/1024/1024,0) + '</td>'
-            if($volumePercentConsumed -ge $volumePercentFullWarning) {
-                $finalResult += '<td class="warning">' + $volumePercentConsumed + '%</td></tr>'
+        foreach($volume in $volumeObjects | Sort-Object -Property ConsumedPercent -Descending) {  
+            $finalResult += '<tr><td><a href="' + $volume.URL + '">' + $volume.Name + '</a></td><td>' + $volume.Location + '</td><td class="center">' + $volume.Provisioned + '</td><td class="center">' + $volume.Consumed + '</td>'
+            if($volume.ConsumedPercent -ge $volumePercentFullWarning) {
+                $finalResult += '<td class="warning">' + $volume.ConsumedPercent + '%</td></tr>'
             } else {
-                $finalResult += '<td class="center">' + $volumePercentConsumed + '%</td></tr>'
+                $finalResult += '<td class="center">' + $volume.ConsumedPercent + '%</td></tr>'
             }
         
     }
     $finalResult += '</table><br>'
     return $finalResult
-    
 }
 function Show-ANFVolumeProtectionStatus() {
     #####
@@ -201,7 +224,7 @@ function Show-ANFVolumeProtectionStatus() {
             }
             $finalResult += $oldestSnapDisplay
             $finalResult += $mostRecentSnapDisplay
-            $finalResult += '<td>' + $snapCount + '</td>'
+            $finalResult += '<td class="center">' + $snapCount + '</td>'
             if($volumeDetail.DataProtection.Replication.endPointType) {
                 if($volumeDetail.DataProtection.Replication.endPointType -eq 'Src') {
                     $replicationDisplay = 'Yes'
@@ -327,4 +350,4 @@ $finalResult += '<br><p>Created by <a href="https://github.com/seanluce">Sean Lu
 Send-Email
 
 ## If you want to run this script locally or for development purposes uncomment out this line below to have the ouput saved locally
-#$finalResult | out-file -filepath 'output.html'
+finalResult | out-file -filepath 'output.html'
