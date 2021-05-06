@@ -4,9 +4,11 @@ Import-Module Az.Resources
 Import-Module Az.Monitor
 
 #User Modifiable Parameters
-$volumePercentFullWarning = 80
-$oldestSnapTooOldThreshold = 30 #days
-$mostRecentSnapTooOldThreshold = 48 #hours
+$volumePercentFullWarning = 80 #highlight volume if consumed % is greater than or equal to
+$volumeSpaceGiBTooLow = 25 #highlight volume if available space is below or equal to
+$oldestSnapTooOldThreshold = 30 #days, highlight snapshot date if oldest snap is older than or equal to
+$mostRecentSnapTooOldThreshold = 48 #hours, highlight snapshot date if newest snap is older than or equal to 
+
 
 ### TODO ###
 # map locations to human readable
@@ -117,7 +119,7 @@ function Show-ANFVolumeUtilizationAboveThreshold() {
     ## Display ANF Volumes with Used Percentages above Threshold
     #####
     $volumeObjects = @()
-    $finalResult += '<h3>Volume Utilization</h3>'
+    $finalResult += '<h3>Volume Utilization above ' + $volumePercentFullWarning + '%</h3>'
     $finalResult += '<table>'
     foreach($volume in $volumes) {
         $volumeDetail = Get-AzNetAppFilesVolume -ResourceId $volume.ResourceId
@@ -128,15 +130,21 @@ function Show-ANFVolumeUtilizationAboveThreshold() {
             Location = $volumeDetail.Location
             Provisioned = $volumeDetail.UsageThreshold/1024/1024/1024
             Consumed = [Math]::Round($volumeConsumedSizes[$volume.ResourceId]/1024/1024/1024,0)
+            Available = [Math]::Round(($volumeDetail.UsageThreshold - $volumeConsumedSizes[$volume.ResourceId])/1024/1024/1024,0)
             ConsumedPercent = $volumePercentConsumed
         }
         $volumeObjects += $volumeCustomObject
     }
-    $finalResult += '<th>Volume Name</th><th>Location</th><th class="center">Provisioned (GiB)</th><th class="center">Consumed (GiB)</th><th class="center">Consumed (%)</th>'
+    $finalResult += '<th>Volume Name</th><th>Location</th><th class="center">Provisioned (GiB)</th><th>Available (GiB)</th><th class="center">Consumed (GiB)</th><th class="center">Consumed (%)</th>'
         foreach($volume in $volumeObjects | Sort-Object -Property ConsumedPercent -Descending) {  
             if($volume.ConsumedPercent -ge $volumePercentFullWarning) {
-                $finalResult += '<tr><td><a href="' + $volume.URL + '">' + $volume.Name + '</a></td><td>' + $volume.Location + '</td><td class="center">' + $volume.Provisioned + '</td><td class="center">' + $volume.Consumed + '</td>'
-                $finalResult += '<td>' + $volume.ConsumedPercent + '%</td></tr>'
+                $finalResult += '<tr><td><a href="' + $volume.URL + '">' + $volume.Name + '</a></td><td>' + $volume.Location + '</td><td class="center">' + $volume.Provisioned + '</td>'
+                if ($volume.Available -le $volumeSpaceGiBTooLow) {
+                    $finalResult += '<td class="warning">' + $volume.Available + '</td>'
+                } else {
+                    $finalResult += '<td class="center">' + $volume.Available + '</td>'
+                }
+                $finalResult += '<td class="center">' + $volume.Consumed + '</td><td class="warning">' + $volume.ConsumedPercent + '%</td></tr>'
             } 
     }
     $finalResult += '</table><br>'
@@ -158,19 +166,25 @@ function Show-ANFVolumeUtilization() {
             Location = $volumeDetail.Location
             Provisioned = $volumeDetail.UsageThreshold/1024/1024/1024
             Consumed = [Math]::Round($volumeConsumedSizes[$volume.ResourceId]/1024/1024/1024,0)
+            Available = [Math]::Round(($volumeDetail.UsageThreshold - $volumeConsumedSizes[$volume.ResourceId])/1024/1024/1024,0)
             ConsumedPercent = $volumePercentConsumed
         }
         $volumeObjects += $volumeCustomObject
     }
-    $finalResult += '<th>Volume Name</th><th>Location</th><th class="center">Provisioned (GiB)</th><th class="center">Consumed (GiB)</th><th class="center">Consumed (%)</th>'
+    $finalResult += '<th>Volume Name</th><th>Location</th><th class="center">Provisioned (GiB)</th><th>Available (GiB)</th><th class="center">Consumed (GiB)</th><th class="center">Consumed (%)</th>'
         foreach($volume in $volumeObjects | Sort-Object -Property ConsumedPercent -Descending) {  
-            $finalResult += '<tr><td><a href="' + $volume.URL + '">' + $volume.Name + '</a></td><td>' + $volume.Location + '</td><td class="center">' + $volume.Provisioned + '</td><td class="center">' + $volume.Consumed + '</td>'
+            $finalResult += '<tr><td><a href="' + $volume.URL + '">' + $volume.Name + '</a></td><td>' + $volume.Location + '</td><td class="center">' + $volume.Provisioned + '</td>'
+            if ($volume.Available -le $volumeSpaceGiBTooLow) {
+                $finalResult += '<td class="warning">' + $volume.Available + '</td>'
+            } else {
+                $finalResult += '<td class="center">' + $volume.Available + '</td>'
+            }
+            $finalResult += '<td class="center">' + $volume.Consumed + '</td>'
             if($volume.ConsumedPercent -ge $volumePercentFullWarning) {
                 $finalResult += '<td class="warning">' + $volume.ConsumedPercent + '%</td></tr>'
             } else {
                 $finalResult += '<td class="center">' + $volume.ConsumedPercent + '%</td></tr>'
             }
-        
     }
     $finalResult += '</table><br>'
     return $finalResult
