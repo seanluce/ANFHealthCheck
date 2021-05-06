@@ -27,7 +27,6 @@ Connect-AzAccount -ServicePrincipal -Tenant $connection.TenantID -ApplicationId 
 # $credentials = Get-AutomationPSCredential -Name "YOURCREDS"
 # Connect-AzAccount -ServicePrincipal -Credential $credentials -Tenant "YOURTENANT"
 
-
 function Send-Email() {
     #####
     ## Send finalResult as email
@@ -315,7 +314,7 @@ $finalResult = @'
                         background-color: #F2F2F2;
                     }
                     th {
-                        background-color: #2958FF;
+                        background-color: #5278ff;
                         color: #FFFFFF;
                         font-weight: normal;
                     }
