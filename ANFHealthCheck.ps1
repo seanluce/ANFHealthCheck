@@ -13,6 +13,9 @@ $mostRecentSnapTooOldThreshold = 48 #hours
 # time offset?
 # add module for detailed snapshot view
 # add module for detailed CRR view
+# SMB share report
+# NFS export report
+# Dual-Protocol Report
 
 # Connects as AzureRunAsConnection from Automation to ARM
 $connection = Get-AutomationConnection -Name AzureRunAsConnection
@@ -123,7 +126,7 @@ function Show-ANFVolumeUtilizationAboveThreshold() {
             Name = $volumeDetail.name.split('/')[2]
             URL = 'https://portal.azure.com/#@' + $Subscription.TenantId + '/resource' + $volume.ResourceId
             Location = $volumeDetail.Location
-            Provisioned = $volumeDetail.name.split('/')[2]
+            Provisioned = $volumeDetail.UsageThreshold/1024/1024/1024
             Consumed = [Math]::Round($volumeConsumedSizes[$volume.ResourceId]/1024/1024/1024,0)
             ConsumedPercent = $volumePercentConsumed
         }
@@ -153,7 +156,7 @@ function Show-ANFVolumeUtilization() {
             Name = $volumeDetail.name.split('/')[2]
             URL = 'https://portal.azure.com/#@' + $Subscription.TenantId + '/resource' + $volume.ResourceId
             Location = $volumeDetail.Location
-            Provisioned = $volumeDetail.name.split('/')[2]
+            Provisioned = $volumeDetail.UsageThreshold/1024/1024/1024
             Consumed = [Math]::Round($volumeConsumedSizes[$volume.ResourceId]/1024/1024/1024,0)
             ConsumedPercent = $volumePercentConsumed
         }
