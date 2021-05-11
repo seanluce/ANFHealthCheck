@@ -282,25 +282,29 @@ function Show-ANFVolumeReplicationStatus() {
     #####
     $finalResult += '<h3>Volume Replication (CRR) Status</h3>'
     $finalResult += '<table>'
-    $finalResult += '<th>Volume Name</th><th class="center">Replication</th><th>Schedule</th><th>Source Region</th><th>Target Region</th><th>Healthy?</th>'
+    $finalResult += '<th>Volume Name</th><th class="center">Type</th><th>Schedule</th><th>Source Region</th><th>Target Region</th><th class="center">Healthy?</th>'
         foreach($volume in $volumeDetails | Sort-Object -Property EndpointType -Descending) {
             $finalResult += '<tr>' + '<td><a href="https://portal.azure.com/#@' + $Subscription.TenantId + '/resource' + $volume.ResourceId + '">' + $volume.name + '</a></td>'
-            if($volume.EndpointType) {
+            if($volume.EndpointType -eq 'Src' -or $volume.EndpointType -eq 'Dst') {
+                $remoteVolumeDetail = Get-AzNetAppFilesVolume -ResourceId $volume.RemoteVolumeResourceId
+                $replicationStatus = Get-AzNetAppFilesReplicationStatus -ResourceId $volume.ResourceId
                 if($volume.EndpointType -eq 'Src') {
                     $replicationDisplay = 'Source'
-                    $remoteRegion = (Get-AzNetAppFilesVolume -ResourceId $volume.RemoteVolumeResourceId).Location
-                    $replicationStatus = (Get-AzNetAppFilesReplicationStatus -ResourceId $volume.ResourceId)
                     $finalResult += '<td class="center">' + $replicationDisplay + '</td>'
-                    $finalResult += '<td>' + $volume.ReplicationSchedule + '</td>'
+                    $finalResult += '<td>' + $remoteVolumeDetail.DataProtection.Replication.ReplicationSchedule + '</td>'
                     $finalResult += '<td>' + $volume.Location + '</td>'
-                    $finalResult += '<td>' + $remoteRegion + '</td>'
-                    $finalResult += '<td>' + $replicationStatus.Healthy + '</td>'
+                    $finalResult += '<td><a href="https://portal.azure.com/#@' + $Subscription.TenantId + '/resource' + $remoteVolumeDetail.Id + '">' + $remoteVolumeDetail.Location + '</td>'
+                    $finalResult += '<td class="center">' + $replicationStatus.Healthy + '</td>'
                 } elseif ($volume.EndpointType -eq 'Dst') {
                     $replicationDisplay = 'Destination'
-                    $finalResult += '<td class="center">' + $replicationDisplay + '</td><td></td><td></td><td></td><td></td>'
+                    $finalResult += '<td class="center">' + $replicationDisplay + '</td>'
+                    $finalResult += '<td>' + $volume.ReplicationSchedule + '</td>'
+                    $finalResult += '<td><a href="https://portal.azure.com/#@' + $Subscription.TenantId + '/resource' + $remoteVolumeDetail.Id + '">' + $remoteVolumeDetail.Location + '</td>'
+                    $finalResult += '<td>' + $volume.Location + '</td>'
+                    $finalResult += '<td class="center">' + $replicationStatus.Healthy + '</td>'
                 }
             } else {
-                $replicationDisplay = 'None'
+                $replicationDisplay = 'n/a'
                 $finalResult += '<td class="warning center">' + $replicationDisplay + '</td><td></td><td></td><td></td><td></td>'
             }
             $finalResult += '</tr>'

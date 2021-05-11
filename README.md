@@ -2,16 +2,26 @@
 
 A PowerShell Runbook that will provide useful information about your Azure NetApp Files (ANF) resources. Schedule this to run every day for the most up-to-date info delivered straight to your inbox.
 
+## Deploy from the Runbook Gallery
+
+Deploy this script from the runbook Gallery. Edit the 'Send-Email' function with your SMTP server, credentials, email address, etc.
+
+## Clone this repo and run locally
+
+Clone this repo to run locally on your machine. Uncomment the last line to send the output to a local file.
+
 ## Current Modules
 
+* NetApp Account Summary
+* Capacity Pool Utilization
+* Volume Utilization Above x%
 * Volume Utilization
-* Volume Protection Status
+* Volume Utilization Growth (x days)
+* Volume Snapshot Status
+* Volume Replication Status
 
 ## Planned Modules
 
-* Capacity Pool Utilization
-* Detailed Cross-Region Replication Report
-* Detailed Snapshot Report
 * ??? - Please open an issue if you have ideas for new modules!
 
 ## Requirements
