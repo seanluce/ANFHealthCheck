@@ -2,6 +2,10 @@
 
 A PowerShell Runbook that will provide useful information about your Azure NetApp Files (ANF) resources. Schedule this to run every day for the most up-to-date info delivered straight to your inbox.
 
+## What does it look like?
+
+<https://seanluce.github.io/ANFHealthCheck/sample_output.html>
+
 ## Deploy from the Runbook Gallery
 
 Deploy this script from the runbook Gallery. Edit the 'Send-Email' function with your SMTP server, credentials, email address, etc.
