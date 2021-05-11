@@ -8,20 +8,23 @@ $volumePercentFullWarning = 80 #highlight volume if consumed % is greater than o
 $volumeSpaceGiBTooLow = 25 #highlight volume if available space is below or equal to
 $oldestSnapTooOldThreshold = 30 #days, highlight snapshot date if oldest snap is older than or equal to
 $mostRecentSnapTooOldThreshold = 48 #hours, highlight snapshot date if newest snap is older than or equal to 
-
+$volumeConsumedDaysAgo = 7 # days ago to display for volume utilization growth over time
 
 ### TODO ###
-# map locations to human readable
 # time offset?
-# add module for detailed snapshot view
 # add module for detailed CRR view
 # SMB share report
 # NFS export report
 # Dual-Protocol Report
 
 # Connects as AzureRunAsConnection from Automation to ARM
-$connection = Get-AutomationConnection -Name AzureRunAsConnection
-Connect-AzAccount -ServicePrincipal -Tenant $connection.TenantID -ApplicationId $connection.ApplicationID -CertificateThumbprint $connection.CertificateThumbprint
+try {
+    $connection = Get-AutomationConnection -Name AzureRunAsConnection
+    Connect-AzAccount -ServicePrincipal -Tenant $connection.TenantID -ApplicationId $connection.ApplicationID -CertificateThumbprint $connection.CertificateThumbprint
+}
+catch {
+    "Unable to Connect-AzAccount using these parameters."
+}
 
 # Connects using custom credentials if AzureRunAsConnection can't be used
 # $credentials = Get-AutomationPSCredential -Name "YOURCREDS"
@@ -41,12 +44,47 @@ function Send-Email() {
     $Body = $finalResult
     Send-MailMessage -smtpServer $SMTPServer -Credential $credential -Usessl -Port 587 -from $EmailFrom -to $EmailTo -subject $Subject -Body $Body -BodyAsHtml
 }
-function Get-ANFVolumeConsumedSizes() {
+function Get-ANFAccounts() {
+    return Get-AzResource | Where-Object {$_.ResourceType -eq "Microsoft.NetApp/netAppAccounts"}
+}
+function Get-ANFPools() {
+    return Get-AzResource | Where-Object {$_.ResourceType -eq "Microsoft.NetApp/netAppAccounts/capacityPools"}
+}
+function Get-ANFVolumes() {
+    ## Use this function to limit the scope to a specific resource group
+    return Get-AzResource | Where-Object {$_.ResourceType -eq "Microsoft.NetApp/netAppAccounts/capacityPools/volumes"}
+}
+function Get-ANFVolumeDetails() {
+    $volumeObjects = @()
+    foreach($volume in $volumes) {
+        $volumeDetail = Get-AzNetAppFilesVolume -ResourceId $volume.ResourceId
+        $volumePercentConsumed = [Math]::Round(($volumeConsumedSizes[$volume.ResourceId]/$volumeDetail.UsageThreshold)*100,2)
+        $volumeCustomObject = [PSCustomObject]@{
+            Name = $volumeDetail.name.split('/')[2]
+            URL = 'https://portal.azure.com/#@' + $Subscription.TenantId + '/resource' + $volume.ResourceId
+            Location = $volumeDetail.Location
+            Provisioned = $volumeDetail.UsageThreshold/1024/1024/1024
+            Consumed = [Math]::Round($volumeConsumedSizes[$volume.ResourceId]/1024/1024/1024,2)
+            Available = [Math]::Round(($volumeDetail.UsageThreshold - $volumeConsumedSizes[$volume.ResourceId])/1024/1024/1024,2)
+            ConsumedPercent = $volumePercentConsumed
+            ResourceID = $volume.ResourceID
+            SnapshotPolicyId = $volumeDetail.DataProtection.Snapshot.SnapshotPolicyId
+            EndpointType = $volumeDetail.DataProtection.Replication.endPointType
+            RemoteVolumeResourceId = $volumeDetail.DataProtection.Replication.RemoteVolumeResourceId
+            ReplicationSchedule = $volumeDetail.DataProtection.Replication.ReplicationSchedule
+            SubnetId = $volumeDetail.SubnetId
+        }
+        $volumeObjects += $volumeCustomObject
+    }
+    return $volumeObjects
+}
+function Get-ANFVolumeConsumedSizes($days) {
     #####
     ## Collect all Volume Consumed Sizes ##
     #####
-    $startTime = [datetime]::Now.AddMinutes(-15)
-    $endTime = [datetime]::Now
+    $volumeConsumedSizes = @{}
+    $endTime = [datetime]::Now.AddDays(-$days)
+    $startTime = $endTime.AddMinutes(-30)
     foreach($volume in $volumes) {
         $consumedSize = 0
         $volumeConsumedDataPoints = Get-AzMetric -ResourceId $volume.ResourceId -MetricName "VolumeLogicalSize" -StartTime $startTime -EndTime $endTime -TimeGrain 00:5:00 -WarningAction:SilentlyContinue -EA SilentlyContinue
@@ -64,6 +102,7 @@ function Get-ANFCapacityPoolAllocatedSizes() {
     #####
     ## Collect all Capacity Pool Allocated Sizes ##
     #####
+    $capacityPoolAllocatedSizes = @{}
     $startTime = [datetime]::Now.AddMinutes(-15)
     $endTime = [datetime]::Now
     foreach($capacityPool in $capacityPools) {
@@ -101,11 +140,10 @@ function Show-ANFCapacityPoolUtilization() {
     #####
     $finalResult += '<h3>Capacity Pool Utilization</h3>'
     $finalResult += '<table>'
-    $finalResult += '<th>Pool Name</th><th>Location</th><th>Service Level</th><th>QoS Type</th><th>Provisioned (GiB)</th><th>Allocated (GiB)</th>'
+    $finalResult += '<th>Pool Name</th><th>Location</th><th>Service Level</th><th>QoS Type</th><th class="center">Provisioned (GiB)</th><th class="center">Allocated (GiB)</th>'
     foreach($capacityPool in $capacityPools) {
         $poolDetail = Get-AzNetAppFilesPool -ResourceId $capacityPool.ResourceId
         $finalResult += '<tr>'
-        
         $finalResult += '<td><a href="https://portal.azure.com/#@' + $Subscription.TenantId + '/resource' + $capacityPool.ResourceId + '">' + $poolDetail.Name.Split('/')[1] + '</a></td><td>' + $poolDetail.Location + '</td><td>' + $poolDetail.ServiceLevel + '</td><td>' + $poolDetail.QosType + '</td><td class = "center">' + $poolDetail.Size / 1024 / 1024 / 1024 + '</td>'
         $finalResult += '<td class="center">' + $capacityPoolAllocatedSizes[$capacityPool.ResourceId] / 1024 / 1024 / 1024 + '</td>' 
         $finalResult += '</tr>'
@@ -117,25 +155,10 @@ function Show-ANFVolumeUtilizationAboveThreshold() {
     #####
     ## Display ANF Volumes with Used Percentages above Threshold
     #####
-    $volumeObjects = @()
     $finalResult += '<h3>Volume Utilization above ' + $volumePercentFullWarning + '%</h3>'
     $finalResult += '<table>'
-    foreach($volume in $volumes) {
-        $volumeDetail = Get-AzNetAppFilesVolume -ResourceId $volume.ResourceId
-        $volumePercentConsumed = [Math]::Round(($volumeConsumedSizes[$volume.ResourceId]/$volumeDetail.UsageThreshold)*100,2)
-        $volumeCustomObject = [PSCustomObject]@{
-            Name = $volumeDetail.name.split('/')[2]
-            URL = 'https://portal.azure.com/#@' + $Subscription.TenantId + '/resource' + $volume.ResourceId
-            Location = $volumeDetail.Location
-            Provisioned = $volumeDetail.UsageThreshold/1024/1024/1024
-            Consumed = [Math]::Round($volumeConsumedSizes[$volume.ResourceId]/1024/1024/1024,0)
-            Available = [Math]::Round(($volumeDetail.UsageThreshold - $volumeConsumedSizes[$volume.ResourceId])/1024/1024/1024,0)
-            ConsumedPercent = $volumePercentConsumed
-        }
-        $volumeObjects += $volumeCustomObject
-    }
-    $finalResult += '<th>Volume Name</th><th>Location</th><th class="center">Provisioned (GiB)</th><th>Available (GiB)</th><th class="center">Consumed (GiB)</th><th class="center">Consumed (%)</th>'
-        foreach($volume in $volumeObjects | Sort-Object -Property ConsumedPercent -Descending) {  
+    $finalResult += '<th>Volume Name</th><th>Location</th><th class="center">Provisioned (GiB)</th><th class="center">Available (GiB)</th><th class="center">Consumed (GiB)</th><th class="center">Consumed (%)</th>'
+        foreach($volume in $volumeDetails | Sort-Object -Property ConsumedPercent -Descending) {  
             if($volume.ConsumedPercent -ge $volumePercentFullWarning) {
                 $finalResult += '<tr><td><a href="' + $volume.URL + '">' + $volume.Name + '</a></td><td>' + $volume.Location + '</td><td class="center">' + $volume.Provisioned + '</td>'
                 if ($volume.Available -le $volumeSpaceGiBTooLow) {
@@ -153,25 +176,10 @@ function Show-ANFVolumeUtilization() {
     #####
     ## Display ANF Volumes with Used Percentages
     #####
-    $volumeObjects = @()
     $finalResult += '<h3>Volume Utilization</h3>'
     $finalResult += '<table>'
-    foreach($volume in $volumes) {
-        $volumeDetail = Get-AzNetAppFilesVolume -ResourceId $volume.ResourceId
-        $volumePercentConsumed = [Math]::Round(($volumeConsumedSizes[$volume.ResourceId]/$volumeDetail.UsageThreshold)*100,2)
-        $volumeCustomObject = [PSCustomObject]@{
-            Name = $volumeDetail.name.split('/')[2]
-            URL = 'https://portal.azure.com/#@' + $Subscription.TenantId + '/resource' + $volume.ResourceId
-            Location = $volumeDetail.Location
-            Provisioned = $volumeDetail.UsageThreshold/1024/1024/1024
-            Consumed = [Math]::Round($volumeConsumedSizes[$volume.ResourceId]/1024/1024/1024,0)
-            Available = [Math]::Round(($volumeDetail.UsageThreshold - $volumeConsumedSizes[$volume.ResourceId])/1024/1024/1024,0)
-            ConsumedPercent = $volumePercentConsumed
-        }
-        $volumeObjects += $volumeCustomObject
-    }
-    $finalResult += '<th>Volume Name</th><th>Location</th><th class="center">Provisioned (GiB)</th><th>Available (GiB)</th><th class="center">Consumed (GiB)</th><th class="center">Consumed (%)</th>'
-        foreach($volume in $volumeObjects | Sort-Object -Property ConsumedPercent -Descending) {  
+    $finalResult += '<th>Volume Name</th><th>Location</th><th class="center">Provisioned (GiB)</th><th class="center">Available (GiB)</th><th class="center">Consumed (GiB)</th><th class="center">Consumed (%)</th>'
+        foreach($volume in $volumeDetails | Sort-Object -Property ConsumedPercent -Descending) {  
             $finalResult += '<tr><td><a href="' + $volume.URL + '">' + $volume.Name + '</a></td><td>' + $volume.Location + '</td><td class="center">' + $volume.Provisioned + '</td>'
             if ($volume.Available -le $volumeSpaceGiBTooLow) {
                 $finalResult += '<td class="warning">' + $volume.Available + '</td>'
@@ -188,20 +196,42 @@ function Show-ANFVolumeUtilization() {
     $finalResult += '</table><br>'
     return $finalResult
 }
-function Show-ANFVolumeProtectionStatus() {
+function Show-ANFVolumeUtilizationGrowth() {
+    #####
+    ## Display ANF Volumes with consumption today and previous
+    #####
+    $finalResult += '<h3>Volume Utilization Growth (' + $volumeDaysAgo + ' days)</h3>'
+    $finalResult += '<table>'
+    $finalResult += '<th>Volume Name</th><th>Location</th><th class="center">Previous Consumed (GiB)</th><th class="center">Today Consumed (GiB)</th><th class="center">Change (%)</th>'
+        foreach($volume in $volumeDetails | Sort-Object -Property ConsumedPercent -Descending) {
+            try {
+                $percentChange = [Math]::Round((($volume.Consumed - [Math]::Round($previousVolumeConsumedSizes[$volume.ResourceId]/1024/1024/1024,2)) / $volume.Consumed),2)
+            }
+            catch {
+                $percentChange = 0
+            }
+            if($percentChange -gt 0) {
+                $finalResult += '<tr><td><a href="' + $volume.URL + '">' + $volume.Name + '</a></td><td>' + $volume.Location + '</td>'
+                $finalResult += '<td class="center">' + [Math]::Round($previousVolumeConsumedSizes[$volume.ResourceId]/1024/1024/1024,2) + '</td>'
+                $finalResult += '<td class="center">' + $volume.Consumed + '</td>'
+                $finalResult += '<td class="center">' + $percentChange + '%</td></tr>'
+            }
+    }
+    $finalResult += '</table><br>'
+    return $finalResult
+}
+function Show-ANFVolumeSnapshotStatus() {
     #####
     ## Display ANF Volumes and Snapshot Policy and CRR Status 
     #####
-    $finalResult += '<h3>Volume Protection Status</h3>'
+    $finalResult += '<h3>Volume Snapshot Status</h3>'
     $finalResult += '<table>'
-    $finalResult += '<th>Volume Name</th><th class="center">Snapshot Policy</th><th>Policy Name</th><th class="center">Oldest Snap</th><th class="center">Newest Snap</th><th>No. Snaps</th><th class="center">Replication</th><th class="center">Schedule</th>'
-        foreach($volume in $volumes) {
-            $volumeDetail = @()
+    $finalResult += '<th>Volume Name</th><th class="center">Snapshot Policy</th><th>Policy Name</th><th class="center">Oldest Snap</th><th class="center">Newest Snap</th><th class="center">No. Snaps</th>'
+        foreach($volume in $volumeDetails) {
             $volumeSnaps = @()
             $snapCount = 0
             $mostRecentSnapDisplay = $null
             $oldestSnapDisplay = $null
-            $volumeDetail = Get-AzNetAppFilesVolume -ResourceId $volume.ResourceId
             $volumeSnaps = Get-AzNetAppFilesSnapshot -ResourceGroupName $volume.ResourceId.split('/')[4] -AccountName $volume.ResourceId.split('/')[8] -PoolName $volume.ResourceId.split('/')[10] -VolumeName $volume.ResourceId.split('/')[12]
             if($volumeSnaps) {
                 $mostRecentSnapDate = $volumeSnaps[0].Created
@@ -218,22 +248,22 @@ function Show-ANFVolumeProtectionStatus() {
                 if($mostRecentSnapDate -le (Get-Date).AddHours(-($mostRecentSnapTooOldThreshold))) {
                     $mostRecentSnapDisplay = '<td class="warning">' + $mostRecentSnapDate.ToString("MM-dd-yy hh:mm tt") + '</td>'
                 } else {
-                    $mostRecentSnapDisplay = '<td>' + $mostRecentSnapDate.ToString("MM-dd-yy hh:mm tt") + '</td>'
+                    $mostRecentSnapDisplay = '<td class="center">' + $mostRecentSnapDate.ToString("MM-dd-yy hh:mm tt") + '</td>'
                 }
                 if($oldestSnapDate -le (Get-Date).AddDays(-($oldestSnapTooOldThreshold))) {
                     $oldestSnapDisplay = '<td class="warning">' + $oldestSnapDate.ToString("MM-dd-yy hh:mm tt") + '</td>'
                 } else {
-                    $oldestSnapDisplay = '<td>' + $oldestSnapDate.ToString("MM-dd-yy hh:mm tt") + '</td>'
+                    $oldestSnapDisplay = '<td class="center">' + $oldestSnapDate.ToString("MM-dd-yy hh:mm tt") + '</td>'
                 }
             } else {
                 $mostRecentSnapDisplay = '<td class="warning">None</td>'
                 $oldestSnapDisplay = '<td class="warning">None</td>'
             }
-            $finalResult += '<tr>' + '<td><a href="https://portal.azure.com/#@' + $Subscription.TenantId + '/resource' + $volume.ResourceId + '">' + $volumeDetail.name.split('/')[2] + '</a></td>'
-            if($volumeDetail.DataProtection.Snapshot.SnapshotPolicyId) {
+            $finalResult += '<tr>' + '<td><a href="https://portal.azure.com/#@' + $Subscription.TenantId + '/resource' + $volume.ResourceId + '">' + $volume.name + '</a></td>'
+            if($volume.SnapshotPolicyId) {
                 $snapshotPolicyDisplay = 'Yes'
                 $finalResult += '<td class="center">' + $snapshotPolicyDisplay + '</td>'
-                $finalResult += '<td>' + $volumeDetail.DataProtection.Snapshot.SnapshotPolicyId.split('/')[10] + '</td>'
+                $finalResult += '<td>' + $volume.SnapshotPolicyId.split('/')[10] + '</td>'
             } else {
                 $snapshotPolicyDisplay = 'No'
                 $finalResult += '<td class="warning center">' + $snapshotPolicyDisplay + '</td><td></td>'
@@ -241,15 +271,33 @@ function Show-ANFVolumeProtectionStatus() {
             $finalResult += $oldestSnapDisplay
             $finalResult += $mostRecentSnapDisplay
             $finalResult += '<td class="center">' + $snapCount + '</td>'
-            if($volumeDetail.DataProtection.Replication.endPointType) {
-                if($volumeDetail.DataProtection.Replication.endPointType -eq 'Src') {
-                    $replicationDisplay = 'Yes'
+            $finalResult += '</tr>'
+        }
+    $finalResult += '</table><br>'
+    return $finalResult 
+}
+function Show-ANFVolumeReplicationStatus() {
+    #####
+    ## Display ANF Volumes and Snapshot Policy and CRR Status 
+    #####
+    $finalResult += '<h3>Volume Replication (CRR) Status</h3>'
+    $finalResult += '<table>'
+    $finalResult += '<th>Volume Name</th><th class="center">Replication</th><th>Schedule</th><th>Source Region</th><th>Target Region</th><th>Healthy?</th>'
+        foreach($volume in $volumeDetails | Sort-Object -Property EndpointType -Descending) {
+            $finalResult += '<tr>' + '<td><a href="https://portal.azure.com/#@' + $Subscription.TenantId + '/resource' + $volume.ResourceId + '">' + $volume.name + '</a></td>'
+            if($volume.EndpointType) {
+                if($volume.EndpointType -eq 'Src') {
+                    $replicationDisplay = 'Source'
+                    $remoteRegion = (Get-AzNetAppFilesVolume -ResourceId $volume.RemoteVolumeResourceId).Location
+                    $replicationStatus = (Get-AzNetAppFilesReplicationStatus -ResourceId $volume.ResourceId)
                     $finalResult += '<td class="center">' + $replicationDisplay + '</td>'
-                    $remoteResourceDetail = Get-AzNetAppFilesVolume -ResourceId $volumeDetail.DataProtection.Replication.RemoteVolumeResourceId
-                    $finalResult += '<td>' + $remoteResourceDetail.DataProtection.Replication.ReplicationSchedule + '</td>'
-                } elseif ($volumeDetail.DataProtection.Replication.endPointType -eq 'Dst') {
-                    $replicationDisplay = 'Dst'
-                    $finalResult += '<td class="center">' + $replicationDisplay + '</td><td></td>'
+                    $finalResult += '<td>' + $volume.ReplicationSchedule + '</td>'
+                    $finalResult += '<td>' + $volume.Location + '</td>'
+                    $finalResult += '<td>' + $remoteRegion + '</td>'
+                    $finalResult += '<td>' + $replicationStatus.Healthy + '</td>'
+                } elseif ($volume.EndpointType -eq 'Dst') {
+                    $replicationDisplay = 'Destination'
+                    $finalResult += '<td class="center">' + $replicationDisplay + '</td><td></td><td></td><td></td><td></td>'
                 }
             } else {
                 $replicationDisplay = 'No'
@@ -260,10 +308,6 @@ function Show-ANFVolumeProtectionStatus() {
     $finalResult += '</table><br>'
     return $finalResult 
 }
-
-## Declare Hash Tables to hold Metric Data
-$volumeConsumedSizes = @{}
-$capacityPoolAllocatedSizes = @{}
 
 ## Get an array of all Azure Subscriptions
 $Subscriptions = Get-AzSubscription
@@ -306,6 +350,9 @@ $finalResult = @'
                         color: #757575;
                         margin: 4px;
                     }
+                    table {
+                        width: 100%;
+                    }
                     table, th, td, tr {
                         border-collapse: collapse;
                         text-align: left;
@@ -344,23 +391,31 @@ foreach ($Subscription in $Subscriptions) {
     
     Set-AzContext $Subscription
 
-    $netAppAccounts = Get-AzResource | Where-Object {$_.ResourceType -eq "Microsoft.NetApp/netAppAccounts"}
-    $capacityPools = Get-AzResource | Where-Object {$_.ResourceType -eq "Microsoft.NetApp/netAppAccounts/capacityPools"}
-    $volumes = Get-AzResource | Where-Object {$_.ResourceType -eq "Microsoft.NetApp/netAppAccounts/capacityPools/volumes"}
+    ## Collect Resources
+    $netAppAccounts = Get-ANFAccounts
+    $capacityPools = Get-ANFPools
+    $volumes = Get-ANFVolumes
     
-    $volumeConsumedSizes = Get-ANFVolumeConsumedSizes
-    $capacityPoolAllocatedSizes = Get-ANFCapacityPoolAllocatedSizes
+    ## collect details for all resources
+    $volumeDetails = Get-ANFVolumeDetails
 
+    ## Collect Azure Monitor Data
+    $volumeConsumedSizes = Get-ANFVolumeConsumedSizes(0) ## get volume utilization from 0 days ago
+    $previousVolumeConsumedSizes = Get-ANFVolumeConsumedSizes($volumeConsumedDaysAgo) # get volumes utilization from number of days ago
+    $capacityPoolAllocatedSizes = Get-ANFCapacityPoolAllocatedSizes
+    
+    ## Generate Module Output
     $finalResult += Show-ANFNetAppAccountSummary
     $finalResult += Show-ANFCapacityPoolUtilization
     $finalResult += Show-ANFVolumeUtilizationAboveThreshold
     $finalResult += Show-ANFVolumeUtilization
-    $finalResult += Show-ANFVolumeProtectionStatus
-
+    $finalResult += Show-ANFVolumeUtilizationGrowth
+    $finalResult += Show-ANFVolumeSnapshotStatus
+    $finalResult += Show-ANFVolumeReplicationStatus
 }
 
 ## Close our body and html tags
-$finalResult += '<br><p>Created by <a href="https://github.com/seanluce">Sean Luce</a>, Cloud Solutions Architect @<a href="https://cloud.netapp.com">NetApp</a></p></body></html>'
+$finalResult += '<br><p>Created by <a href="https://github.com/seanluce">Sean Luce</a>, Cloud Solutions Architect <a href="https://cloud.netapp.com">@NetApp</a></p></body></html>'
 
 ## Send the HTML via email
 Send-Email
