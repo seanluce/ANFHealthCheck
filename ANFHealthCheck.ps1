@@ -300,8 +300,8 @@ function Show-ANFVolumeReplicationStatus() {
                     $finalResult += '<td class="center">' + $replicationDisplay + '</td><td></td><td></td><td></td><td></td>'
                 }
             } else {
-                $replicationDisplay = 'No'
-                $finalResult += '<td class="warning center">' + $replicationDisplay + '</td><td></td>'
+                $replicationDisplay = 'None'
+                $finalResult += '<td class="warning center">' + $replicationDisplay + '</td><td></td><td></td><td></td><td></td>'
             }
             $finalResult += '</tr>'
         }
