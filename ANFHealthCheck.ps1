@@ -54,7 +54,7 @@ function Get-ANFVolumes() {
     ## Use this function to limit the scope to a specific resource group
     return Get-AzResource | Where-Object {$_.ResourceType -eq "Microsoft.NetApp/netAppAccounts/capacityPools/volumes"}
 }
-function Get-ANFVolumeDetails() {
+function Get-ANFVolumeDetails($volumeConsumedSizes) {
     $volumeObjects = @()
     foreach($volume in $volumes) {
         $volumeDetail = Get-AzNetAppFilesVolume -ResourceId $volume.ResourceId
@@ -399,15 +399,15 @@ foreach ($Subscription in $Subscriptions) {
     $netAppAccounts = Get-ANFAccounts
     $capacityPools = Get-ANFPools
     $volumes = Get-ANFVolumes
-    
-    ## collect details for all resources
-    $volumeDetails = Get-ANFVolumeDetails
 
     ## Collect Azure Monitor Data
     $volumeConsumedSizes = Get-ANFVolumeConsumedSizes(0) ## get volume utilization from 0 days ago
     $previousVolumeConsumedSizes = Get-ANFVolumeConsumedSizes($volumeConsumedDaysAgo) # get volumes utilization from number of days ago
     $capacityPoolAllocatedSizes = Get-ANFCapacityPoolAllocatedSizes
     
+    ## collect details for all resources
+    $volumeDetails = Get-ANFVolumeDetails($volumeConsumedSizes)
+
     ## Generate Module Output
     $finalResult += Show-ANFNetAppAccountSummary
     $finalResult += Show-ANFCapacityPoolUtilization
