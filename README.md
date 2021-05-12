@@ -1,4 +1,4 @@
-<img src="./img/anficon.png" align="left" alt="" height="50" style="margin: 0 0 0 0; " /><br>
+<img src="./img/anficon.png" alt="" height="50" style="margin: 0 0 0 0; " /><br>
 
 # ANFHealthCheck
 
