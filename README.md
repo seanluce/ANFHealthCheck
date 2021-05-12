@@ -10,7 +10,7 @@ A PowerShell Runbook that will provide useful information about your Azure NetAp
 
 ## Deploy from the Runbook Gallery
 
-Deploy this script from the runbook Gallery. Edit the 'Send-Email' function with your SMTP server, credentials, email address, etc.
+Deploy this script from the Runbook Gallery. Edit the 'Send-Email' function with your SMTP server, credentials, email address, etc.
 
 ## Clone this repo and run locally
 
