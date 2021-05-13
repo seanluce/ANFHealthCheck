@@ -394,7 +394,7 @@ $finalResult = @'
 foreach ($Subscription in $Subscriptions) {
     
     Set-AzContext $Subscription
-
+    $finalResult += '<h6>Subscription: ' + $Subscription.Name + ', ' + $Subscription.Id + '</h6>'
     ## Collect Resources
     $netAppAccounts = Get-ANFAccounts
     $capacityPools = Get-ANFPools
