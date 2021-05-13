@@ -200,7 +200,7 @@ function Show-ANFVolumeUtilizationGrowth() {
     #####
     ## Display ANF Volumes with consumption today and previous
     #####
-    $finalResult += '<h3>Volume Utilization Growth (' + $volumeDaysAgo + ' days)</h3>'
+    $finalResult += '<h3>Volume Utilization Growth (' + $volumeConsumedDaysAgo + ' days)</h3>'
     $finalResult += '<table>'
     $finalResult += '<th>Volume Name</th><th>Location</th><th class="center">Previous Consumed (GiB)</th><th class="center">Today Consumed (GiB)</th><th class="center">Change (%)</th>'
         foreach($volume in $volumeDetails | Sort-Object -Property ConsumedPercent -Descending) {
