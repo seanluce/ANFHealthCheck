@@ -1,3 +1,8 @@
+param (
+    [string]$SubID,
+    [string]$OutFile
+ )
+
 Import-Module Az.Accounts
 Import-Module Az.NetAppFiles
 Import-Module Az.Resources
@@ -314,7 +319,11 @@ function Show-ANFVolumeReplicationStatus() {
 }
 
 ## Get an array of all Azure Subscriptions
-$Subscriptions = Get-AzSubscription
+if ($SubID) {
+    $Subscriptions = Get-AzSubscription | Where-Object {$_.SubscriptionId -eq $SubID}
+} else {
+    $Subscriptions = Get-AzSubscription
+}
 
 ## Add some CSS - feel free to customize to match your brand or corporate standards
 $finalResult = @'
@@ -421,8 +430,10 @@ foreach ($Subscription in $Subscriptions) {
 ## Close our body and html tags
 $finalResult += '<br><p>Created by <a href="https://github.com/seanluce">Sean Luce</a>, Cloud Solutions Architect <a href="https://cloud.netapp.com">@NetApp</a></p></body></html>'
 
-## Send the HTML via email
-Send-Email
+## If you want to run this script locally use parameter -OutFile myoutput.html
+if($OutFile) {
+    $finalResult | out-file -filepath $OutFile
+} else {
+    Send-Email 
+}
 
-## If you want to run this script locally or for development purposes uncomment out this line below to have the ouput saved locally
-#$finalResult | out-file -filepath 'output.html'
