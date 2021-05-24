@@ -4,6 +4,10 @@
 
 A PowerShell Runbook that will provide useful information about your Azure NetApp Files (ANF) resources. Schedule this to run every day for the most up-to-date info delivered straight to your inbox.
 
+## Limit the scope to a single Subscription
+
+Use the -SubID parameter to limit the scope to a single subscription ID.
+
 ## What does it look like?
 
 <https://seanluce.github.io/ANFHealthCheck/sample_output.html>
@@ -14,7 +18,7 @@ Deploy this script from the Runbook Gallery. Edit the 'Send-Email' function with
 
 ## Clone this repo and run locally
 
-Clone this repo to run locally on your machine. Uncomment the last line to send the output to a local file.
+Clone this repo to run locally on your machine. Use the parameter '-OutFile myfile.html' to write the output locally instead of sending via Email.
 
 ## Current Modules
 
