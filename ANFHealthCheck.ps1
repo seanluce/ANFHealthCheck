@@ -10,6 +10,7 @@ Import-Module Az.Monitor
 
 #User Modifiable Parameters
 $volumePercentFullWarning = 80 #highlight volume if consumed % is greater than or equal to
+$poolPercentAllocatedWarning = 90 #highlight pool if allocated % is greater than or equal to
 $volumeSpaceGiBTooLow = 25 #highlight volume if available space is below or equal to
 $oldestSnapTooOldThreshold = 30 #days, highlight snapshot date if oldest snap is older than or equal to
 $mostRecentSnapTooOldThreshold = 48 #hours, highlight snapshot date if newest snap is older than or equal to 
@@ -145,12 +146,18 @@ function Show-ANFCapacityPoolUtilization() {
     #####
     $finalResult += '<h3>Capacity Pool Utilization</h3>'
     $finalResult += '<table>'
-    $finalResult += '<th>Pool Name</th><th>Location</th><th>Service Level</th><th>QoS Type</th><th class="center">Provisioned (GiB)</th><th class="center">Allocated (GiB)</th>'
+    $finalResult += '<th>Pool Name</th><th>Location</th><th>Service Level</th><th>QoS Type</th><th class="center">Provisioned (GiB)</th><th class="center">Allocated (GiB)</th><th class ="center">Allocated (%)</th>'
     foreach($capacityPool in $capacityPools) {
         $poolDetail = Get-AzNetAppFilesPool -ResourceId $capacityPool.ResourceId
         $finalResult += '<tr>'
         $finalResult += '<td><a href="https://portal.azure.com/#@' + $Subscription.TenantId + '/resource' + $capacityPool.ResourceId + '">' + $poolDetail.Name.Split('/')[1] + '</a></td><td>' + $poolDetail.Location + '</td><td>' + $poolDetail.ServiceLevel + '</td><td>' + $poolDetail.QosType + '</td><td class = "center">' + $poolDetail.Size / 1024 / 1024 / 1024 + '</td>'
-        $finalResult += '<td class="center">' + $capacityPoolAllocatedSizes[$capacityPool.ResourceId] / 1024 / 1024 / 1024 + '</td>' 
+        $finalResult += '<td class="center">' + $capacityPoolAllocatedSizes[$capacityPool.ResourceId] / 1024 / 1024 / 1024 + '</td>'
+        $poolAllocatedPercent = [Math]::Round((($capacityPoolAllocatedSizes[$capacityPool.ResourceId] / $poolDetail.Size) * 100),2)
+        if($poolAllocatedPercent -ge $poolPercentAllocatedWarning) {
+            $finalResult += '<td class="warning">' + [Math]::Round((($capacityPoolAllocatedSizes[$capacityPool.ResourceId] / $poolDetail.Size) * 100),2) + '%'
+        } else {
+            $finalResult += '<td class="center">' + [Math]::Round((($capacityPoolAllocatedSizes[$capacityPool.ResourceId] / $poolDetail.Size) * 100),2) + '%'
+        }
         $finalResult += '</tr>'
     }
     $finalResult += '</table><br>'
