@@ -1,6 +1,0 @@
-$percentChange = ([Math]::Round((($volume.Consumed - [Math]::Round($previousVolumeConsumedSizes[$volume.ResourceId]/1024/1024/1024,2)) / $volume.Consumed) * 100
-
-With this line…
-
-$percentChange = ([Math]::Round((($volume.Consumed - [Math]::Round($previousVolumeConsumedSizes[$volume.ResourceId]/1024/1024/1024,2)) / [Math]::Round($previousVolumeConsumedSizes[$volume.ResourceId]/1024/1024/1024,2)),2)) * 100
-
