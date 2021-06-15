@@ -238,7 +238,7 @@ function Show-ANFVolumeSnapshotStatus() {
     #####
     $finalResult += '<h3>Volume Snapshot Status</h3>'
     $finalResult += '<table>'
-    $finalResult += '<th>Volume Name</th><th class="center">Snapshot Policy</th><th>Policy Name</th><th class="center">Oldest Snap</th><th class="center">Newest Snap</th><th class="center">No. Snaps</th>'
+    $finalResult += '<th>Volume Name</th><th>Location</th><th class="center">Snapshot Policy</th><th>Policy Name</th><th class="center">Oldest Snap</th><th class="center">Newest Snap</th><th class="center">No. Snaps</th>'
         foreach($volume in $volumeDetails) {
             $volumeSnaps = @()
             $snapCount = 0
@@ -271,7 +271,7 @@ function Show-ANFVolumeSnapshotStatus() {
                 $mostRecentSnapDisplay = '<td class="warning">None</td>'
                 $oldestSnapDisplay = '<td class="warning">None</td>'
             }
-            $finalResult += '<tr>' + '<td><a href="https://portal.azure.com/#@' + $Subscription.TenantId + '/resource' + $volume.ResourceId + '">' + $volume.name + '</a></td>'
+            $finalResult += '<tr>' + '<td><a href="https://portal.azure.com/#@' + $Subscription.TenantId + '/resource' + $volume.ResourceId + '">' + $volume.Name + '</a></td><td>' + $volume.Location + '</td>'
             if($volume.SnapshotPolicyId) {
                 $snapshotPolicyDisplay = 'Yes'
                 $finalResult += '<td class="center">' + $snapshotPolicyDisplay + '</td>'
