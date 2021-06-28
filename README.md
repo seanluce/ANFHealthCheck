@@ -23,6 +23,7 @@ Clone this repo to run locally on your machine. Use the parameter '-OutFile myfi
 ## Current Modules
 
 * NetApp Account Summary
+* NEW Capacity Provisioned Against Regional Quota ([more info](https://azure.microsoft.com/en-us/updates/azure-netapp-files-regional-capacity-quota/#:~:text=StartingJuly%2026%2C%202021%20Azure%20NetApp%20Files%20%E2%80%93%20likesome,25%20TiB%2C%20per%20region%2C%20across%20all%20service%20levels.))
 * Capacity Pool Utilization
 * Volume Utilization Above x%
 * Volume Utilization

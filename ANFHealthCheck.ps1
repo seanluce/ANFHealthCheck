@@ -15,6 +15,7 @@ $volumeSpaceGiBTooLow = 25 #highlight volume if available space is below or equa
 $oldestSnapTooOldThreshold = 30 #days, highlight snapshot date if oldest snap is older than or equal to
 $mostRecentSnapTooOldThreshold = 48 #hours, highlight snapshot date if newest snap is older than or equal to 
 $volumeConsumedDaysAgo = 7 # days ago to display for volume utilization growth over time
+$regionProvisionedPercentWarning = 90
 
 ### TODO ###
 # time offset?
@@ -136,6 +137,30 @@ function Show-ANFNetAppAccountSummary() {
         $finalResult += '<tr>'
         $finalResult += '<td><a href="https://portal.azure.com/#@' + $Subscription.TenantId + '/resource' + $netAppAccount.ResourceId + '">' + $accountDetail.Name + '</a></td><td>' + $accountDetail.Location + '</td><td>' + $accountDetail.ResourceGroupName + '</td>'
         $finalResult += '</tr>'
+    }
+    $finalResult += '</table><br>'
+    return $finalResult
+}
+function Show-ANFRegionalProvisioned() {
+    #####
+    ## Display provisioned capacity per region
+    #####
+    $finalResult += '<h3>Capacity Provisioned Against Regional Quota</h3>'
+    $finalResult += '<table>'
+    $finalResult += '<th>Region</th><th class="center">Quota (TiB)</th><th class="center">Provisioned (TiB)</th><th class="center">Provisioned (%)</th>'
+    $regionAllocated = @{}
+    foreach($capacityPool in $capacityPools) {
+        $poolDetail = Get-AzNetAppFilesPool -ResourceId $capacityPool.ResourceId
+        $regionAllocated[$poolDetail.Location] += $poolDetail.Size 
+    }
+    foreach($region in $regionAllocated.Keys) {
+        $percentofQuota = [Math]::Round((($regionAllocated[$region]/1024/1024/1024/1024 / 25) * 100),2)
+        $finalResult += '<tr>' + '<td>' + $region + '</td><td class="center">25</td><td class="center">' + $regionAllocated[$region]/1024/1024/1024/1024  + '</td>'
+        if($percentofQuota -ge $regionProvisionedPercentWarning) {
+            $finalResult += '<td class="warning">' + $percentofQuota + '</td></tr>'
+        } else {
+            $finalResult += '<td class="center">' + $percentofQuota + '</td></tr>'
+        }
     }
     $finalResult += '</table><br>'
     return $finalResult
@@ -409,7 +434,7 @@ $finalResult = @'
 
 foreach ($Subscription in $Subscriptions) {
     
-    Set-AzContext $Subscription
+    Set-AzContext $Subscription 
     $finalResult += '<h6>Subscription: ' + $Subscription.Name + ', ' + $Subscription.Id + '</h6>'
     ## Collect Resources
     $netAppAccounts = Get-ANFAccounts
@@ -426,6 +451,7 @@ foreach ($Subscription in $Subscriptions) {
 
     ## Generate Module Output
     $finalResult += Show-ANFNetAppAccountSummary
+    $finalResult += Show-ANFRegionalProvisioned
     $finalResult += Show-ANFCapacityPoolUtilization
     $finalResult += Show-ANFVolumeUtilizationAboveThreshold
     $finalResult += Show-ANFVolumeUtilization
