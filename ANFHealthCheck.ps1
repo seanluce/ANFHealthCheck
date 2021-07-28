@@ -148,18 +148,27 @@ function Show-ANFRegionalProvisioned() {
     $finalResult += '<h3>Capacity Provisioned Against Regional Quota</h3>'
     $finalResult += '<table>'
     $finalResult += '<th>Region</th><th class="center">Quota (TiB)</th><th class="center">Provisioned (TiB)</th><th class="center">Provisioned (%)</th>'
+    $regionQuota = @{ ## assumed to be 25TiB if not specified
+        eastus = 30
+    }
+
     $regionAllocated = @{}
     foreach($capacityPool in $capacityPools) {
         $poolDetail = Get-AzNetAppFilesPool -ResourceId $capacityPool.ResourceId
         $regionAllocated[$poolDetail.Location] += $poolDetail.Size 
     }
     foreach($region in $regionAllocated.Keys) {
-        $percentofQuota = [Math]::Round((($regionAllocated[$region]/1024/1024/1024/1024 / 25) * 100),2)
-        $finalResult += '<tr>' + '<td>' + $region + '</td><td class="center">25</td><td class="center">' + $regionAllocated[$region]/1024/1024/1024/1024  + '</td>'
-        if($percentofQuota -ge $regionProvisionedPercentWarning) {
-            $finalResult += '<td class="warning">' + $percentofQuota + '</td></tr>'
+        if($regionQuota[$region]) {
+            $thisRegionQuota = $regionQuota[$region] 
         } else {
-            $finalResult += '<td class="center">' + $percentofQuota + '</td></tr>'
+            $thisRegionQuota = 25
+        }
+        $percentofQuota = [Math]::Round((($regionAllocated[$region]/1024/1024/1024/1024 / $thisRegionQuota) * 100),2)
+        $finalResult += '<tr>' + '<td>' + $region + '</td><td class="center">' + $thisRegionQuota + '</td><td class="center">' + $regionAllocated[$region]/1024/1024/1024/1024  + '</td>'
+        if($percentofQuota -ge $regionProvisionedPercentWarning) {
+            $finalResult += '<td class="warning">' + $percentofQuota + '%</td></tr>'
+        } else {
+            $finalResult += '<td class="center">' + $percentofQuota + '%</td></tr>'
         }
     }
     $finalResult += '</table><br>'

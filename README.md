@@ -4,6 +4,10 @@
 
 A PowerShell Runbook that will provide useful information about your Azure NetApp Files (ANF) resources. Schedule this to run every day for the most up-to-date info delivered straight to your inbox.
 
+## Change Log
+
+July 27, 2021 - added hash table to store hard coded regional quotas until API is available. Default is 25TiB unless another value is specified for a given region.
+
 ## Limit the scope to a single Subscription
 
 Use the -SubID parameter to limit the scope to a single subscription ID.
