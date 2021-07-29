@@ -3,6 +3,8 @@ param (
     [string]$OutFile
  )
 
+$sendMethod = "blob" # choose blob or email
+
 Import-Module Az.Accounts
 Import-Module Az.NetAppFiles
 Import-Module Az.Resources
@@ -30,7 +32,7 @@ try {
     Connect-AzAccount -ServicePrincipal -Tenant $connection.TenantID -ApplicationId $connection.ApplicationID -CertificateThumbprint $connection.CertificateThumbprint
 }
 catch {
-    "Unable to Connect-AzAccount using these parameters."
+    "Unable to Connect-AzAccount using these parameters. Using locally cached credentials instead."
 }
 
 # Connects using custom credentials if AzureRunAsConnection can't be used
@@ -51,6 +53,27 @@ function Send-Email() {
     $Body = $finalResult
     Send-MailMessage -smtpServer $SMTPServer -Credential $credential -Usessl -Port 587 -from $EmailFrom -to $EmailTo -subject $Subject -Body $Body -BodyAsHtml
 }
+
+Function Save-Blob() {
+    $dateStamp = get-date -format "yyyyMMddHHmm"
+    $blobName = "ANFHealthCheck_" + $dateStamp + ".html"
+    $storageAccountRg = "sluce.rg"
+    $storageAccountName =  "seanshowback"
+    $containerName = 'anfhealthcheck' # to use Azure Static Sites, set to $web
+    $finalResult | out-file -filepath $blobName
+    $storageAccount = Set-AzStorageAccount -ResourceGroupName $storageAccountRg -Name $storageAccountName
+    $context = $storageAccount.context
+    try {
+        New-AzStorageContainer -name $containerName -context $context -Permission off -ErrorAction Stop # change permissions to 'blob' for read access to blob
+    }
+    catch {
+        "Container already exists."
+    }
+    Set-AzStorageBlobContent $blobName -Container $containername -blob $blobName -context $context -Properties @{"ContentType" = 'text/html'} -Force
+    Set-AzStorageBlobContent $blobName -Container $containername -blob "index.html" -context $context -Properties @{"ContentType" = 'text/html'} -Force
+    Remove-Item $blobName
+}
+
 function Get-ANFAccounts() {
     return Get-AzResource | Where-Object {$_.ResourceType -eq "Microsoft.NetApp/netAppAccounts"}
 }
@@ -475,7 +498,10 @@ $finalResult += '<br><p>Created by <a href="https://github.com/seanluce">Sean Lu
 ## If you want to run this script locally use parameter -OutFile myoutput.html
 if($OutFile) {
     $finalResult | out-file -filepath $OutFile
+} elseif($sendMethod -eq "email") {
+    Send-Email
 } else {
-    Send-Email 
+    Save-Blob
 }
+
 
