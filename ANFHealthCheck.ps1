@@ -172,7 +172,7 @@ function Show-ANFRegionalProvisioned() {
     $finalResult += '<table>'
     $finalResult += '<th>Region</th><th class="center">Quota (TiB)</th><th class="center">Provisioned (TiB)</th><th class="center">Provisioned (%)</th>'
     $regionQuota = @{ ## assumed to be 25TiB if not specified
-        eastus = 30
+        eastus = 25
     }
 
     $regionAllocated = @{}
