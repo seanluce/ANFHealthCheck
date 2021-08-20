@@ -1,5 +1,5 @@
 param (
-    [string]$SubID,
+    [string]$subId,
     [string]$OutFile
  )
 
@@ -9,6 +9,7 @@ Import-Module Az.Accounts
 Import-Module Az.NetAppFiles
 Import-Module Az.Resources
 Import-Module Az.Monitor
+Import-Module Az.Storage
 
 #User Modifiable Parameters
 $volumePercentFullWarning = 80 #highlight volume if consumed % is greater than or equal to
@@ -73,7 +74,6 @@ Function Save-Blob() {
     Set-AzStorageBlobContent $blobName -Container $containername -blob "index.html" -context $context -Properties @{"ContentType" = 'text/html'} -Force
     Remove-Item $blobName
 }
-
 function Get-ANFAccounts() {
     return Get-AzResource | Where-Object {$_.ResourceType -eq "Microsoft.NetApp/netAppAccounts"}
 }
@@ -168,21 +168,25 @@ function Show-ANFRegionalProvisioned() {
     #####
     ## Display provisioned capacity per region
     #####
+    $allANFRegions = Get-AzLocation | Where-Object {$_.Providers -contains "Microsoft.NetApp"}
+    $regionCapacityQuota = @{}
+    foreach($region in $allANFRegions) {
+        $restPath = '/subscriptions/' + $Subscription.Id + '/providers/Microsoft.NetApp/locations/' + $region.Location + '/quotaLimits?api-version=2021-06-01'
+        $rawAPIResponse = Invoke-AzRestMethod -Path $restPath -Method GET
+        $jsonResponse = ConvertFrom-Json $rawAPIResponse.Content
+        $regionCapacityQuota.add($region.Location, $jsonResponse.totalTiBsPerSubscription.current)
+    }
     $finalResult += '<h3>Capacity Provisioned Against Regional Quota</h3>'
     $finalResult += '<table>'
     $finalResult += '<th>Region</th><th class="center">Quota (TiB)</th><th class="center">Provisioned (TiB)</th><th class="center">Provisioned (%)</th>'
-    $regionQuota = @{ ## assumed to be 25TiB if not specified
-        eastus = 25
-    }
-
     $regionAllocated = @{}
     foreach($capacityPool in $capacityPools) {
         $poolDetail = Get-AzNetAppFilesPool -ResourceId $capacityPool.ResourceId
         $regionAllocated[$poolDetail.Location] += $poolDetail.Size 
     }
     foreach($region in $regionAllocated.Keys) {
-        if($regionQuota[$region]) {
-            $thisRegionQuota = $regionQuota[$region] 
+        if($regionCapacityQuota[$region]) {
+            $thisRegionQuota = $regionCapacityQuota[$region] 
         } else {
             $thisRegionQuota = 25
         }
@@ -273,17 +277,22 @@ function Show-ANFVolumeUtilizationGrowth() {
     $finalResult += '<table>'
     $finalResult += '<th>Volume Name</th><th>Location</th><th class="center">Previous Consumed (GiB)</th><th class="center">Today Consumed (GiB)</th><th class="center">Change (%)</th>'
         foreach($volume in $volumeDetails | Sort-Object -Property ConsumedPercent -Descending) {
-            try {
-                $percentChange = ([Math]::Round((($volume.Consumed - [Math]::Round($previousVolumeConsumedSizes[$volume.ResourceId]/1024/1024/1024,2)) / [Math]::Round($previousVolumeConsumedSizes[$volume.ResourceId]/1024/1024/1024,2)),2)) * 100
-            }
-            catch {
-                $percentChange = 0
-            }
-            if($percentChange -gt 0) {
+            if($previousVolumeConsumedSizes[$volume.ResourceId] -gt 0) {
+                try {
+                    $percentChange = ([Math]::Round((($volume.Consumed - [Math]::Round($previousVolumeConsumedSizes[$volume.ResourceId]/1024/1024/1024,2)) / [Math]::Round($previousVolumeConsumedSizes[$volume.ResourceId]/1024/1024/1024,2)),2)) * 100
+                }
+                catch {
+                    $percentChange = 0
+                }
                 $finalResult += '<tr><td><a href="' + $volume.URL + '">' + $volume.Name + '</a></td><td>' + $volume.Location + '</td>'
                 $finalResult += '<td class="center">' + [Math]::Round($previousVolumeConsumedSizes[$volume.ResourceId]/1024/1024/1024,2) + '</td>'
                 $finalResult += '<td class="center">' + $volume.Consumed + '</td>'
                 $finalResult += '<td class="center">' + $percentChange + '%</td></tr>'
+            } else {
+                $finalResult += '<tr><td><a href="' + $volume.URL + '">' + $volume.Name + '</a></td><td>' + $volume.Location + '</td>'
+                $finalResult += '<td class="center">' + [Math]::Round($previousVolumeConsumedSizes[$volume.ResourceId]/1024/1024/1024,2) + '</td>'
+                $finalResult += '<td class="center">' + $volume.Consumed + '</td>'
+                $finalResult += '<td class="center">' + 'n/a' + '%</td></tr>'
             }
     }
     $finalResult += '</table><br>'
@@ -383,8 +392,8 @@ function Show-ANFVolumeReplicationStatus() {
 }
 
 ## Get an array of all Azure Subscriptions
-if ($SubID) {
-    $Subscriptions = Get-AzSubscription | Where-Object {$_.SubscriptionId -eq $SubID}
+if ($subId) {
+    $Subscriptions = Get-AzSubscription | Where-Object {$_.SubscriptionId -eq $subId}
 } else {
     $Subscriptions = Get-AzSubscription
 }
