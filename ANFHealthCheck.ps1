@@ -3,7 +3,7 @@ param (
     [string]$OutFile
  )
 
-$sendMethod = "blob" # choose blob or email
+$sendMethod = "email" # choose blob or email
 
 Import-Module Az.Accounts
 Import-Module Az.NetAppFiles
@@ -12,8 +12,10 @@ Import-Module Az.Monitor
 Import-Module Az.Storage
 
 #User Modifiable Parameters
-$volumePercentFullWarning = 80 #highlight volume if consumed % is greater than or equal to
-$poolPercentAllocatedWarning = 90 #highlight pool if allocated % is greater than or equal to
+$volumePercentFullWarning = 20 #highlight volume if consumed % is greater than or equal to
+$volumePercentUnderWarning = 10 #highlight volume if consumed % is less than or equal to
+$volumePercentUnderWarningMinSize = 0 #used with above variable to only show volumes larger than this size
+$poolPercentAllocatedWarning = 90 #highlight pool if allocated % is less than or equal to
 $volumeSpaceGiBTooLow = 25 #highlight volume if available space is below or equal to
 $oldestSnapTooOldThreshold = 30 #days, highlight snapshot date if oldest snap is older than or equal to
 $mostRecentSnapTooOldThreshold = 48 #hours, highlight snapshot date if newest snap is older than or equal to 
@@ -104,6 +106,7 @@ function Get-ANFVolumeDetails($volumeConsumedSizes) {
             ReplicationSchedule = $volumeDetail.DataProtection.Replication.ReplicationSchedule
             SubnetId = $volumeDetail.SubnetId
         }
+        Export-Csv -InputObject $volumeCustomObject -Append -Path volumeDetails.csv 
         $volumeObjects += $volumeCustomObject
     }
     return $volumeObjects
@@ -148,17 +151,38 @@ function Get-ANFCapacityPoolAllocatedSizes() {
     return $capacityPoolAllocatedSizes
     ## Collect all Volume Consumed Sizes ##
 }
+function Get-ANFPoolDetails($poolAllocatedSizes) {
+    $poolObjects = @()
+    foreach($pool in $capacityPools) {
+        $poolDetail = Get-AzNetAppFilesPool -ResourceId $pool.ResourceId
+        $poolPercentAllocated = [Math]::Round(($poolAllocatedSizes[$pool.ResourceId]/$poolDetail.Size)*100,2)
+        $poolCustomObject = [PSCustomObject]@{
+            Name = $poolDetail.name.split('/')[1]
+            ServiceLevel = $poolDetail.ServiceLevel
+            QosType = $poolDetail.QosType
+            URL = 'https://portal.azure.com/#@' + $Subscription.TenantId + '/resource' + $pool.ResourceId
+            Location = $poolDetail.Location
+            Provisioned = $poolDetail.Size/1024/1024/1024
+            Allocated = [Math]::Round($poolAllocatedSizes[$pool.ResourceId]/1024/1024/1024,2)
+            AllocatedPercent = $poolPercentAllocated
+            ResourceID = $volume.ResourceID
+        }
+        Export-Csv -InputObject $poolCustomObject -Append -Path poolDetails.csv 
+        $poolObjects += $poolCustomObject
+    }
+    return $poolObjects
+}
 function Show-ANFNetAppAccountSummary() {
     #####
     ## Display ANF NetApp Account Summary
     #####
     $finalResult += '<h3>NetApp Account Summary</h3>'
     $finalResult += '<table>'
-    $finalResult += '<th>Account Name</th><th>Location</th><th>Resource Group</th>'
+    $finalResult += '<th>Account Name</th><th>Location</th><th>Resource Group</th><th>Domain</th>'
     foreach($netAppAccount in $netAppAccounts) {
-        $accountDetail = Get-AzNetAppFilesAccount -ResourceId $netAppAccount.ResourceId
+        $accountDetail = Get-AzNetAppFilesAccount -ResourceId $netAppAccount.ResourceId | Select-Object Name, Location, ResourceGroupName, ActiveDirectories
         $finalResult += '<tr>'
-        $finalResult += '<td><a href="https://portal.azure.com/#@' + $Subscription.TenantId + '/resource' + $netAppAccount.ResourceId + '">' + $accountDetail.Name + '</a></td><td>' + $accountDetail.Location + '</td><td>' + $accountDetail.ResourceGroupName + '</td>'
+        $finalResult += '<td><a href="https://portal.azure.com/#@' + $Subscription.TenantId + '/resource' + $netAppAccount.ResourceId + '">' + $accountDetail.Name + '</a></td><td>' + $accountDetail.Location + '</td><td>' + $accountDetail.ResourceGroupName + '</td><td>' + $accountDetail.ActiveDirectories.Domain + '</td>'
         $finalResult += '</tr>'
     }
     $finalResult += '</table><br>'
@@ -208,16 +232,14 @@ function Show-ANFCapacityPoolUtilization() {
     $finalResult += '<h3>Capacity Pool Utilization</h3>'
     $finalResult += '<table>'
     $finalResult += '<th>Pool Name</th><th>Location</th><th>Service Level</th><th>QoS Type</th><th class="center">Provisioned (GiB)</th><th class="center">Allocated (GiB)</th><th class ="center">Allocated (%)</th>'
-    foreach($capacityPool in $capacityPools) {
-        $poolDetail = Get-AzNetAppFilesPool -ResourceId $capacityPool.ResourceId
+    foreach($poolDetail in $poolDetails) {
         $finalResult += '<tr>'
-        $finalResult += '<td><a href="https://portal.azure.com/#@' + $Subscription.TenantId + '/resource' + $capacityPool.ResourceId + '">' + $poolDetail.Name.Split('/')[1] + '</a></td><td>' + $poolDetail.Location + '</td><td>' + $poolDetail.ServiceLevel + '</td><td>' + $poolDetail.QosType + '</td><td class = "center">' + $poolDetail.Size / 1024 / 1024 / 1024 + '</td>'
-        $finalResult += '<td class="center">' + $capacityPoolAllocatedSizes[$capacityPool.ResourceId] / 1024 / 1024 / 1024 + '</td>'
-        $poolAllocatedPercent = [Math]::Round((($capacityPoolAllocatedSizes[$capacityPool.ResourceId] / $poolDetail.Size) * 100),2)
-        if($poolAllocatedPercent -ge $poolPercentAllocatedWarning) {
-            $finalResult += '<td class="warning">' + [Math]::Round((($capacityPoolAllocatedSizes[$capacityPool.ResourceId] / $poolDetail.Size) * 100),2) + '%'
+        $finalResult += '<td><a '+ $poolDetail.URL + '">' + $poolDetail.Name + '</a></td><td>' + $poolDetail.Location + '</td><td>' + $poolDetail.ServiceLevel + '</td><td>' + $poolDetail.QosType + '</td><td class = "center">' + $poolDetail.Provisioned + '</td>'
+        $finalResult += '<td class="center">' + $poolDetail.Allocated + '</td>'
+        if($poolDetail.AllocatedPercent -le $poolPercentAllocatedWarning) {
+            $finalResult += '<td class="warning">' + $poolDetail.AllocatedPercent + '%</td>'
         } else {
-            $finalResult += '<td class="center">' + [Math]::Round((($capacityPoolAllocatedSizes[$capacityPool.ResourceId] / $poolDetail.Size) * 100),2) + '%'
+            $finalResult += '<td class="center">' + $poolDetail.AllocatedPercent + '%</td>'
         }
         $finalResult += '</tr>'
     }
@@ -245,6 +267,27 @@ function Show-ANFVolumeUtilizationAboveThreshold() {
     $finalResult += '</table><br>'
     return $finalResult
 }
+function Show-ANFVolumeUtilizationBelowThreshold() {
+    #####
+    ## Display ANF Volumes with Used Percentages above Threshold
+    #####
+    $finalResult += '<h3>Volume Utilization below ' + $volumePercentUnderWarning + '% (volumes >= ' + $volumePercentUnderWarningMinSize + ' GiB)</h3>'
+    $finalResult += '<table>'
+    $finalResult += '<th>Volume Name</th><th>Location</th><th class="center">Provisioned (GiB)</th><th class="center">Available (GiB)</th><th class="center">Consumed (GiB)</th><th class="center">Consumed (%)</th>'
+        foreach($volume in $volumeDetails | Sort-Object -Property ConsumedPercent -Descending) {  
+            if($volume.ConsumedPercent -le $volumePercentUnderWarning -and $volume.Provisioned -ge $volumePercentUnderWarningMinSize) {
+                $finalResult += '<tr><td><a href="' + $volume.URL + '">' + $volume.Name + '</a></td><td>' + $volume.Location + '</td><td class="center">' + $volume.Provisioned + '</td>'
+                if ($volume.Available -le $volumeSpaceGiBTooLow) {
+                    $finalResult += '<td class="warning">' + $volume.Available + '</td>'
+                } else {
+                    $finalResult += '<td class="center">' + $volume.Available + '</td>'
+                }
+                $finalResult += '<td class="center">' + $volume.Consumed + '</td><td class="warning">' + $volume.ConsumedPercent + '%</td></tr>'
+            } 
+    }
+    $finalResult += '</table><br>'
+    return $finalResult
+}
 function Show-ANFVolumeUtilization() {
     #####
     ## Display ANF Volumes with Used Percentages
@@ -260,7 +303,7 @@ function Show-ANFVolumeUtilization() {
                 $finalResult += '<td class="center">' + $volume.Available + '</td>'
             }
             $finalResult += '<td class="center">' + $volume.Consumed + '</td>'
-            if($volume.ConsumedPercent -ge $volumePercentFullWarning) {
+            if($volume.ConsumedPercent -ge $volumePercentFullWarning -or $volume.ConsumedPercent -le $volumePercentUnderWarning) {
                 $finalResult += '<td class="warning">' + $volume.ConsumedPercent + '%</td></tr>'
             } else {
                 $finalResult += '<td class="center">' + $volume.ConsumedPercent + '%</td></tr>'
@@ -489,12 +532,14 @@ foreach ($Subscription in $Subscriptions) {
     
     ## collect details for all resources
     $volumeDetails = Get-ANFVolumeDetails($volumeConsumedSizes)
+    $poolDetails = Get-ANFPoolDetails($capacityPoolAllocatedSizes)
 
     ## Generate Module Output
     $finalResult += Show-ANFNetAppAccountSummary
     $finalResult += Show-ANFRegionalProvisioned
     $finalResult += Show-ANFCapacityPoolUtilization
     $finalResult += Show-ANFVolumeUtilizationAboveThreshold
+    $finalResult += Show-ANFVolumeUtilizationBelowThreshold
     $finalResult += Show-ANFVolumeUtilization
     $finalResult += Show-ANFVolumeUtilizationGrowth
     $finalResult += Show-ANFVolumeSnapshotStatus
