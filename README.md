@@ -6,6 +6,11 @@ A PowerShell Runbook that will provide useful information about your Azure NetAp
 
 ## Change Log
 
+Sept 01, 2021 - added field 'active directory domain' to NetApp account module
+Sept 01, 2021 - created new module to show under-utilized pools only
+Sept 01, 2021 - created new module to show under-utilized volumes only, optionally only above a certain size
+Sept 01, 2021 - fixed display for 'manual' qos type in pool detail display
+Sept 01, 2021 - regional quota module now retrieves actual regional quota from API
 July 27, 2021 - added hash table to store hard coded regional quotas until API is available. Default is 25TiB unless another value is specified for a given region.
 
 ## Limit the scope to a single Subscription

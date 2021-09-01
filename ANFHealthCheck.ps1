@@ -225,6 +225,24 @@ function Show-ANFRegionalProvisioned() {
     $finalResult += '</table><br>'
     return $finalResult
 }
+function Show-ANFCapacityPoolUnderUtilized() {
+    #####
+    ## Display ANF Capacity Pools that are under-utilized
+    #####
+    $finalResult += '<h3>Capacity Pool Utilization below ' + $poolPercentAllocatedWarning + '%</h3>'
+    $finalResult += '<table>'
+    $finalResult += '<th>Pool Name</th><th>Location</th><th>Service Level</th><th>QoS Type</th><th class="center">Provisioned (GiB)</th><th class="center">Allocated (GiB)</th><th class ="center">Allocated (%)</th>'
+    foreach($poolDetail in $poolDetails) {
+        if($poolDetail.AllocatedPercent -le $poolPercentAllocatedWarning) {
+            $finalResult += '<tr>'
+            $finalResult += '<td><a '+ $poolDetail.URL + '">' + $poolDetail.Name + '</a></td><td>' + $poolDetail.Location + '</td><td>' + $poolDetail.ServiceLevel + '</td><td>' + $poolDetail.QosType + '</td><td class = "center">' + $poolDetail.Provisioned + '</td>'
+            $finalResult += '<td class="center">' + $poolDetail.Allocated + '</td>'
+            $finalResult += '<td class="warning">' + $poolDetail.AllocatedPercent + '%</td></tr>'
+        } 
+    }
+    $finalResult += '</table><br>'
+    return $finalResult
+}
 function Show-ANFCapacityPoolUtilization() {
     #####
     ## Display ANF Capacity Pools with Used Percentages
@@ -537,6 +555,7 @@ foreach ($Subscription in $Subscriptions) {
     ## Generate Module Output
     $finalResult += Show-ANFNetAppAccountSummary
     $finalResult += Show-ANFRegionalProvisioned
+    $finalResult += Show-ANFCapacityPoolUnderUtilized
     $finalResult += Show-ANFCapacityPoolUtilization
     $finalResult += Show-ANFVolumeUtilizationAboveThreshold
     $finalResult += Show-ANFVolumeUtilizationBelowThreshold
