@@ -46,15 +46,15 @@ function Send-Email() {
     #####
     ## Send finalResult as email
     #####
-    $Username ="YOURSENDGRIDUSERNAME@azure.com" # Your user name - found in SendGrid portal
-    $Password = ConvertTo-SecureString "SECRETPASSWORD" -AsPlainText -Force # SendGrid password
+    $Username ="YOURUSERNAME" # Your user name - found in SendGrid portal
+    $Password = ConvertTo-SecureString "YOURSECRET" -AsPlainText -Force # SendGrid password
     $credential = New-Object System.Management.Automation.PSCredential $Username, $Password
     $SMTPServer = "smtp.sendgrid.net"
-    $EmailFrom = "anf@xyz.com" # Can be anything - aaa@xyz.com
-    $EmailTo = "you@xyz.com" # Valid recepient email address
+    $EmailFrom = "aaa@xyz.com" # Can be anything - aaa@xyz.com
+    $EmailTo = "aaa@xyz.com" # Valid recepient email address
     $Subject = "Azure NetApp Files Health Report"
     $Body = $finalResult
-    Send-MailMessage -smtpServer $SMTPServer -Credential $credential -Usessl -Port 587 -from $EmailFrom -to $EmailTo -subject $Subject -Body $Body -BodyAsHtml
+    Send-MailMessage -smtpServer $SMTPServer -Credential $credential -Usessl -Port 587 -from $EmailFrom -to $EmailTo -subject $Subject -Body $Body -BodyAsHtml -Attachments poolDetails.csv, volumeDetails.csv
 }
 
 Function Save-Blob() {
