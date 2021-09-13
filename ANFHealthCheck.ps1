@@ -92,7 +92,9 @@ function Get-ANFVolumeDetails($volumeConsumedSizes) {
         $volumeDetail = Get-AzNetAppFilesVolume -ResourceId $volume.ResourceId
         $volumePercentConsumed = [Math]::Round(($volumeConsumedSizes[$volume.ResourceId]/$volumeDetail.UsageThreshold)*100,2)
         $volumeCustomObject = [PSCustomObject]@{
-            Name = $volumeDetail.name.split('/')[2]
+            Volume = $volumeDetail.name.split('/')[2]
+            capacityPool = $volumeDetail.name.split('/')[1]
+            netappAccount = $volumeDetail.name.split('/')[0]
             URL = 'https://portal.azure.com/#@' + $Subscription.TenantId + '/resource' + $volume.ResourceId
             Location = $volumeDetail.Location
             Provisioned = $volumeDetail.UsageThreshold/1024/1024/1024
@@ -157,7 +159,8 @@ function Get-ANFPoolDetails($poolAllocatedSizes) {
         $poolDetail = Get-AzNetAppFilesPool -ResourceId $pool.ResourceId
         $poolPercentAllocated = [Math]::Round(($poolAllocatedSizes[$pool.ResourceId]/$poolDetail.Size)*100,2)
         $poolCustomObject = [PSCustomObject]@{
-            Name = $poolDetail.name.split('/')[1]
+            capacityPool = $poolDetail.name.split('/')[1]
+            netappAccount = $poolDetail.name.split('/')[0]
             ServiceLevel = $poolDetail.ServiceLevel
             QosType = $poolDetail.QosType
             URL = 'https://portal.azure.com/#@' + $Subscription.TenantId + '/resource' + $pool.ResourceId
@@ -165,7 +168,7 @@ function Get-ANFPoolDetails($poolAllocatedSizes) {
             Provisioned = $poolDetail.Size/1024/1024/1024
             Allocated = [Math]::Round($poolAllocatedSizes[$pool.ResourceId]/1024/1024/1024,2)
             AllocatedPercent = $poolPercentAllocated
-            ResourceID = $volume.ResourceID
+            ResourceID = $pool.ResourceID
         }
         Export-Csv -InputObject $poolCustomObject -Append -Path poolDetails.csv 
         $poolObjects += $poolCustomObject
@@ -235,7 +238,7 @@ function Show-ANFCapacityPoolUnderUtilized() {
     foreach($poolDetail in $poolDetails) {
         if($poolDetail.AllocatedPercent -le $poolPercentAllocatedWarning) {
             $finalResult += '<tr>'
-            $finalResult += '<td><a '+ $poolDetail.URL + '">' + $poolDetail.Name + '</a></td><td>' + $poolDetail.Location + '</td><td>' + $poolDetail.ServiceLevel + '</td><td>' + $poolDetail.QosType + '</td><td class = "center">' + $poolDetail.Provisioned + '</td>'
+            $finalResult += '<td><a href="' + $poolDetail.URL + '">' + $poolDetail.capacityPool + '</a></td><td>' + $poolDetail.Location + '</td><td>' + $poolDetail.ServiceLevel + '</td><td>' + $poolDetail.QosType + '</td><td class = "center">' + $poolDetail.Provisioned + '</td>'
             $finalResult += '<td class="center">' + $poolDetail.Allocated + '</td>'
             $finalResult += '<td class="warning">' + $poolDetail.AllocatedPercent + '%</td></tr>'
         } 
@@ -252,7 +255,7 @@ function Show-ANFCapacityPoolUtilization() {
     $finalResult += '<th>Pool Name</th><th>Location</th><th>Service Level</th><th>QoS Type</th><th class="center">Provisioned (GiB)</th><th class="center">Allocated (GiB)</th><th class ="center">Allocated (%)</th>'
     foreach($poolDetail in $poolDetails) {
         $finalResult += '<tr>'
-        $finalResult += '<td><a '+ $poolDetail.URL + '">' + $poolDetail.Name + '</a></td><td>' + $poolDetail.Location + '</td><td>' + $poolDetail.ServiceLevel + '</td><td>' + $poolDetail.QosType + '</td><td class = "center">' + $poolDetail.Provisioned + '</td>'
+        $finalResult += '<td><a href="' + $poolDetail.URL + '">' + $poolDetail.capacityPool + '</a></td><td>' + $poolDetail.Location + '</td><td>' + $poolDetail.ServiceLevel + '</td><td>' + $poolDetail.QosType + '</td><td class = "center">' + $poolDetail.Provisioned + '</td>'
         $finalResult += '<td class="center">' + $poolDetail.Allocated + '</td>'
         if($poolDetail.AllocatedPercent -le $poolPercentAllocatedWarning) {
             $finalResult += '<td class="warning">' + $poolDetail.AllocatedPercent + '%</td>'
@@ -273,7 +276,7 @@ function Show-ANFVolumeUtilizationAboveThreshold() {
     $finalResult += '<th>Volume Name</th><th>Location</th><th class="center">Provisioned (GiB)</th><th class="center">Available (GiB)</th><th class="center">Consumed (GiB)</th><th class="center">Consumed (%)</th>'
         foreach($volume in $volumeDetails | Sort-Object -Property ConsumedPercent -Descending) {  
             if($volume.ConsumedPercent -ge $volumePercentFullWarning) {
-                $finalResult += '<tr><td><a href="' + $volume.URL + '">' + $volume.Name + '</a></td><td>' + $volume.Location + '</td><td class="center">' + $volume.Provisioned + '</td>'
+                $finalResult += '<tr><td><a href="' + $volume.URL + '">' + $volume.Volume + '</a></td><td>' + $volume.Location + '</td><td class="center">' + $volume.Provisioned + '</td>'
                 if ($volume.Available -le $volumeSpaceGiBTooLow) {
                     $finalResult += '<td class="warning">' + $volume.Available + '</td>'
                 } else {
@@ -294,7 +297,7 @@ function Show-ANFVolumeUtilizationBelowThreshold() {
     $finalResult += '<th>Volume Name</th><th>Location</th><th class="center">Provisioned (GiB)</th><th class="center">Available (GiB)</th><th class="center">Consumed (GiB)</th><th class="center">Consumed (%)</th>'
         foreach($volume in $volumeDetails | Sort-Object -Property ConsumedPercent -Descending) {  
             if($volume.ConsumedPercent -le $volumePercentUnderWarning -and $volume.Provisioned -ge $volumePercentUnderWarningMinSize) {
-                $finalResult += '<tr><td><a href="' + $volume.URL + '">' + $volume.Name + '</a></td><td>' + $volume.Location + '</td><td class="center">' + $volume.Provisioned + '</td>'
+                $finalResult += '<tr><td><a href="' + $volume.URL + '">' + $volume.Volume + '</a></td><td>' + $volume.Location + '</td><td class="center">' + $volume.Provisioned + '</td>'
                 if ($volume.Available -le $volumeSpaceGiBTooLow) {
                     $finalResult += '<td class="warning">' + $volume.Available + '</td>'
                 } else {
@@ -314,7 +317,7 @@ function Show-ANFVolumeUtilization() {
     $finalResult += '<table>'
     $finalResult += '<th>Volume Name</th><th>Location</th><th class="center">Provisioned (GiB)</th><th class="center">Available (GiB)</th><th class="center">Consumed (GiB)</th><th class="center">Consumed (%)</th>'
         foreach($volume in $volumeDetails | Sort-Object -Property ConsumedPercent -Descending) {  
-            $finalResult += '<tr><td><a href="' + $volume.URL + '">' + $volume.Name + '</a></td><td>' + $volume.Location + '</td><td class="center">' + $volume.Provisioned + '</td>'
+            $finalResult += '<tr><td><a href="' + $volume.URL + '">' + $volume.Volume + '</a></td><td>' + $volume.Location + '</td><td class="center">' + $volume.Provisioned + '</td>'
             if ($volume.Available -le $volumeSpaceGiBTooLow) {
                 $finalResult += '<td class="warning">' + $volume.Available + '</td>'
             } else {
@@ -345,12 +348,12 @@ function Show-ANFVolumeUtilizationGrowth() {
                 catch {
                     $percentChange = 0
                 }
-                $finalResult += '<tr><td><a href="' + $volume.URL + '">' + $volume.Name + '</a></td><td>' + $volume.Location + '</td>'
+                $finalResult += '<tr><td><a href="' + $volume.URL + '">' + $volume.Volume + '</a></td><td>' + $volume.Location + '</td>'
                 $finalResult += '<td class="center">' + [Math]::Round($previousVolumeConsumedSizes[$volume.ResourceId]/1024/1024/1024,2) + '</td>'
                 $finalResult += '<td class="center">' + $volume.Consumed + '</td>'
                 $finalResult += '<td class="center">' + $percentChange + '%</td></tr>'
             } else {
-                $finalResult += '<tr><td><a href="' + $volume.URL + '">' + $volume.Name + '</a></td><td>' + $volume.Location + '</td>'
+                $finalResult += '<tr><td><a href="' + $volume.URL + '">' + $volume.Volume + '</a></td><td>' + $volume.Location + '</td>'
                 $finalResult += '<td class="center">' + [Math]::Round($previousVolumeConsumedSizes[$volume.ResourceId]/1024/1024/1024,2) + '</td>'
                 $finalResult += '<td class="center">' + $volume.Consumed + '</td>'
                 $finalResult += '<td class="center">' + 'n/a' + '%</td></tr>'
@@ -398,7 +401,7 @@ function Show-ANFVolumeSnapshotStatus() {
                 $mostRecentSnapDisplay = '<td class="warning">None</td>'
                 $oldestSnapDisplay = '<td class="warning">None</td>'
             }
-            $finalResult += '<tr>' + '<td><a href="https://portal.azure.com/#@' + $Subscription.TenantId + '/resource' + $volume.ResourceId + '">' + $volume.Name + '</a></td><td>' + $volume.Location + '</td>'
+            $finalResult += '<tr>' + '<td><a href="https://portal.azure.com/#@' + $Subscription.TenantId + '/resource' + $volume.ResourceId + '">' + $volume.Volume + '</a></td><td>' + $volume.Location + '</td>'
             if($volume.SnapshotPolicyId) {
                 $snapshotPolicyDisplay = 'Yes'
                 $finalResult += '<td class="center">' + $snapshotPolicyDisplay + '</td>'
@@ -423,7 +426,7 @@ function Show-ANFVolumeReplicationStatus() {
     $finalResult += '<table>'
     $finalResult += '<th>Volume Name</th><th class="center">Type</th><th>Schedule</th><th>Source Region</th><th>Target Region</th><th class="center">Healthy?</th>'
         foreach($volume in $volumeDetails | Sort-Object -Property EndpointType -Descending) {
-            $finalResult += '<tr>' + '<td><a href="https://portal.azure.com/#@' + $Subscription.TenantId + '/resource' + $volume.ResourceId + '">' + $volume.name + '</a></td>'
+            $finalResult += '<tr>' + '<td><a href="https://portal.azure.com/#@' + $Subscription.TenantId + '/resource' + $volume.ResourceId + '">' + $volume.Volume + '</a></td>'
             if($volume.EndpointType -eq 'Src' -or $volume.EndpointType -eq 'Dst') {
                 $remoteVolumeDetail = Get-AzNetAppFilesVolume -ResourceId $volume.RemoteVolumeResourceId
                 $replicationStatus = Get-AzNetAppFilesReplicationStatus -ResourceId $volume.ResourceId
