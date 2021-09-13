@@ -6,7 +6,7 @@ A PowerShell Runbook that will provide useful information about your Azure NetAp
 
 ## Change Log
 
-* Sept 13/ 2021 - added additional columns to CSV output, pool name, account, etc.
+* Sept 13, 2021 - added additional columns to CSV output, pool name, account, etc.
 * Sept 01, 2021 - added CSV attachments to email for volume and pool details
 * Sept 01, 2021 - added field 'active directory domain' to NetApp account module
 * Sept 01, 2021 - created new module to show under-utilized pools only
