@@ -31,8 +31,8 @@ $regionProvisionedPercentWarning = 90
 
 # Connects as AzureRunAsConnection from Automation to ARM
 try {
-    $connection = Get-AutomationConnection -Name AzureRunAsConnection
-    Connect-AzAccount -ServicePrincipal -Tenant $connection.TenantID -ApplicationId $connection.ApplicationID -CertificateThumbprint $connection.CertificateThumbprint
+    $connection = Get-AutomationConnection -Name AzureRunAsConnection -ErrorAction SilentlyContinue
+    Connect-AzAccount -ServicePrincipal -Tenant $connection.TenantID -ApplicationId $connection.ApplicationID -CertificateThumbprint $connection.CertificateThumbprint -ErrorAction SilentlyContinue
 }
 catch {
     "Unable to Connect-AzAccount using these parameters. Using locally cached credentials instead."
