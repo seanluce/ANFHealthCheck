@@ -457,7 +457,9 @@ function Show-ANFVolumeReplicationStatus() {
 
 ## Get an array of all Azure Subscriptions
 if ($subId) {
-    $Subscriptions = Get-AzSubscription | Where-Object {$_.SubscriptionId -eq $subId}
+    $subArray = $subId.Split(',')
+    $subArray
+    $Subscriptions = Get-AzSubscription | Where-Object {$_.SubscriptionId -in $subArray}
 } else {
     $Subscriptions = Get-AzSubscription
 }
