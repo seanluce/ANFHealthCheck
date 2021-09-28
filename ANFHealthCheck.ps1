@@ -16,11 +16,15 @@ $volumePercentFullWarning = 20 #highlight volume if consumed % is greater than o
 $volumePercentUnderWarning = 10 #highlight volume if consumed % is less than or equal to
 $volumePercentUnderWarningMinSize = 0 #used with above variable to only show volumes larger than this size
 $poolPercentAllocatedWarning = 90 #highlight pool if allocated % is less than or equal to
+$poolPercentAllocatedWarningMinSize = 0 #used with above variable to only show poosl larger than this size
 $volumeSpaceGiBTooLow = 25 #highlight volume if available space is below or equal to
 $oldestSnapTooOldThreshold = 30 #days, highlight snapshot date if oldest snap is older than or equal to
 $mostRecentSnapTooOldThreshold = 48 #hours, highlight snapshot date if newest snap is older than or equal to 
-$volumeConsumedDaysAgo = 7 # days ago to display for volume utilization growth over time
-$regionProvisionedPercentWarning = 90
+$volumeConsumedDaysAgo = 7 #days ago to display for volume utilization growth over time
+$regionProvisionedPercentWarning = 90 #highlight region if provisioned against quota higher than this value
+
+$volumeTagName = 'purpose' #name of tag to filter
+$volumeTagValue = 'restore' #value of tag to filter
 
 ### TODO ###
 # time offset?
@@ -107,6 +111,7 @@ function Get-ANFVolumeDetails($volumeConsumedSizes) {
             RemoteVolumeResourceId = $volumeDetail.DataProtection.Replication.RemoteVolumeResourceId
             ReplicationSchedule = $volumeDetail.DataProtection.Replication.ReplicationSchedule
             SubnetId = $volumeDetail.SubnetId
+            Tags = $volumeDetail.Tags
         }
         Export-Csv -InputObject $volumeCustomObject -Append -Path volumeDetails.csv 
         $volumeObjects += $volumeCustomObject
@@ -232,11 +237,11 @@ function Show-ANFCapacityPoolUnderUtilized() {
     #####
     ## Display ANF Capacity Pools that are under-utilized
     #####
-    $finalResult += '<h3>Capacity Pool Utilization below ' + $poolPercentAllocatedWarning + '%</h3>'
+    $finalResult += '<h3>Capacity Pool Utilization below ' + $poolPercentAllocatedWarning + '% (pool >= ' + $poolPercentAllocatedWarningMinSize + ' GiB)</h3>'
     $finalResult += '<table>'
     $finalResult += '<th>Pool Name</th><th>Location</th><th>Service Level</th><th>QoS Type</th><th class="center">Provisioned (GiB)</th><th class="center">Allocated (GiB)</th><th class ="center">Allocated (%)</th>'
-    foreach($poolDetail in $poolDetails) {
-        if($poolDetail.AllocatedPercent -le $poolPercentAllocatedWarning) {
+    foreach($poolDetail in $poolDetails | Sort-Object -Property ConsumedPercent) {
+        if($poolDetail.AllocatedPercent -le $poolPercentAllocatedWarning -and $poolDetail.Provisioned -gt $poolPercentAllocatedWarningMinSize) {
             $finalResult += '<tr>'
             $finalResult += '<td><a href="' + $poolDetail.URL + '">' + $poolDetail.capacityPool + '</a></td><td>' + $poolDetail.Location + '</td><td>' + $poolDetail.ServiceLevel + '</td><td>' + $poolDetail.QosType + '</td><td class = "center">' + $poolDetail.Provisioned + '</td>'
             $finalResult += '<td class="center">' + $poolDetail.Allocated + '</td>'
@@ -253,7 +258,7 @@ function Show-ANFCapacityPoolUtilization() {
     $finalResult += '<h3>Capacity Pool Utilization</h3>'
     $finalResult += '<table>'
     $finalResult += '<th>Pool Name</th><th>Location</th><th>Service Level</th><th>QoS Type</th><th class="center">Provisioned (GiB)</th><th class="center">Allocated (GiB)</th><th class ="center">Allocated (%)</th>'
-    foreach($poolDetail in $poolDetails) {
+    foreach($poolDetail in $poolDetails | Sort-Object -Property ConsumedPercent) {
         $finalResult += '<tr>'
         $finalResult += '<td><a href="' + $poolDetail.URL + '">' + $poolDetail.capacityPool + '</a></td><td>' + $poolDetail.Location + '</td><td>' + $poolDetail.ServiceLevel + '</td><td>' + $poolDetail.QosType + '</td><td class = "center">' + $poolDetail.Provisioned + '</td>'
         $finalResult += '<td class="center">' + $poolDetail.Allocated + '</td>'
@@ -320,6 +325,31 @@ function Show-ANFVolumeUtilization() {
             $finalResult += '<tr><td><a href="' + $volume.URL + '">' + $volume.Volume + '</a></td><td>' + $volume.Location + '</td><td class="center">' + $volume.Provisioned + '</td>'
             if ($volume.Available -le $volumeSpaceGiBTooLow) {
                 $finalResult += '<td class="warning">' + $volume.Available + '</td>'
+            } else {
+                $finalResult += '<td class="center">' + $volume.Available + '</td>'
+            }
+            $finalResult += '<td class="center">' + $volume.Consumed + '</td>'
+            if($volume.ConsumedPercent -ge $volumePercentFullWarning -or $volume.ConsumedPercent -le $volumePercentUnderWarning) {
+                $finalResult += '<td class="warning">' + $volume.ConsumedPercent + '%</td></tr>'
+            } else {
+                $finalResult += '<td class="center">' + $volume.ConsumedPercent + '%</td></tr>'
+            }
+    }
+    $finalResult += '</table><br>'
+    return $finalResult
+}
+function Show-ANFVolumeUtilizationFilterTag() {
+    #####
+    ## Display ANF Volumes with Used Percentages filtered by tag
+    #####
+    $finalResult += '<h3>Volume Utilization (tag: ' + $volumeTagName + ' = ' + $volumeTagValue + ')</h3>'
+    $finalResult += '<table>'
+    $finalResult += '<th>Volume Name</th><th>Location</th><th class="center">Provisioned (GiB)</th><th class="center">Available (GiB)</th><th class="center">Consumed (GiB)</th><th class="center">Consumed (%)</th>'
+        $volumesMatchingTag = $volumeDetails | where-object {$_.Tags.$volumeTagName -eq $volumeTagValue}
+        foreach($volume in $volumesMatchingTag | Sort-Object -Property ConsumedPercent -Descending) {  
+            $finalResult += '<tr><td><a href="' + $volume.URL + '">' + $volume.Volume + '</a></td><td>' + $volume.Location + '</td><td class="center">' + $volume.Provisioned + '</td>'
+            if ($volume.Available -le $volumeSpaceGiBTooLow) {
+                $finalResult += '<td class="warning">' + $volume.Available + '</td>' 
             } else {
                 $finalResult += '<td class="center">' + $volume.Available + '</td>'
             }
@@ -562,6 +592,7 @@ foreach ($Subscription in $Subscriptions) {
     $finalResult += Show-ANFRegionalProvisioned
     $finalResult += Show-ANFCapacityPoolUnderUtilized
     $finalResult += Show-ANFCapacityPoolUtilization
+    #$finalResult += Show-ANFVolumeUtilizationFilterTag
     $finalResult += Show-ANFVolumeUtilizationAboveThreshold
     $finalResult += Show-ANFVolumeUtilizationBelowThreshold
     $finalResult += Show-ANFVolumeUtilization
