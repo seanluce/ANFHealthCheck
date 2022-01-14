@@ -1,6 +1,7 @@
 param (
     [string]$subId,
-    [string]$OutFile
+    [string]$OutFile,
+    [string]$Subject = "Azure NetApp Files Health Report"
  )
 
 $sendMethod = "email" # choose blob or email
@@ -20,6 +21,8 @@ $poolPercentAllocatedWarningMinSize = 0 #used with above variable to only show p
 $volumeSpaceGiBTooLow = 25 #highlight volume if available space is below or equal to
 $oldestSnapTooOldThreshold = 30 #days, highlight snapshot date if oldest snap is older than or equal to
 $mostRecentSnapTooOldThreshold = 48 #hours, highlight snapshot date if newest snap is older than or equal to 
+$oldestBackupTooOldThreshold = 30 #days, highlight snapshot date if oldest snap is older than or equal to
+$mostRecentBackupTooOldThreshold = 48 #hours, highlight snapshot date if newest snap is older than or equal to
 $volumeConsumedDaysAgo = 7 #days ago to display for volume utilization growth over time
 $regionProvisionedPercentWarning = 90 #highlight region if provisioned against quota higher than this value
 
@@ -56,7 +59,6 @@ function Send-Email() {
     $SMTPServer = "smtp.sendgrid.net"
     $EmailFrom = "aaa@xyz.com" # Can be anything - aaa@xyz.com
     $EmailTo = "aaa@xyz.com" # Valid recepient email address
-    $Subject = "Azure NetApp Files Health Report"
     $Body = $finalResult
     Send-MailMessage -smtpServer $SMTPServer -Credential $credential -Usessl -Port 587 -from $EmailFrom -to $EmailTo -subject $Subject -Body $Body -BodyAsHtml -Attachments poolDetails.csv, volumeDetails.csv
 }
@@ -107,6 +109,10 @@ function Get-ANFVolumeDetails($volumeConsumedSizes) {
             ConsumedPercent = $volumePercentConsumed
             ResourceID = $volume.ResourceID
             SnapshotPolicyId = $volumeDetail.DataProtection.Snapshot.SnapshotPolicyId
+            BackupPolicyId = $volumeDetail.DataProtection.Backup.BackupPolicyId
+            BackupVaultId = $volumeDetail.DataProtection.Backup.VaultId
+            BackupEnabled = $volumeDetail.DataProtection.Backup.BackupEnabled
+            BackupPolicyEnforced = $volumeDetail.DataProtection.Backup.PolicyEnforced #this is GUI setting 'Policy Suspended'
             EndpointType = $volumeDetail.DataProtection.Replication.endPointType
             RemoteVolumeResourceId = $volumeDetail.DataProtection.Replication.RemoteVolumeResourceId
             ReplicationSchedule = $volumeDetail.DataProtection.Replication.ReplicationSchedule
@@ -206,7 +212,7 @@ function Show-ANFRegionalProvisioned() {
         $restPath = '/subscriptions/' + $Subscription.Id + '/providers/Microsoft.NetApp/locations/' + $region.Location + '/quotaLimits?api-version=2021-06-01'
         $rawAPIResponse = Invoke-AzRestMethod -Path $restPath -Method GET
         $jsonResponse = ConvertFrom-Json $rawAPIResponse.Content
-        $regionCapacityQuota.add($region.Location, $jsonResponse.totalTiBsPerSubscription.current)
+        $regionCapacityQuota.add($region.Location, $jsonResponse[5].properties.current)
     }
     $finalResult += '<h3>Capacity Provisioned Against Regional Quota</h3>'
     $finalResult += '<table>'
@@ -448,6 +454,62 @@ function Show-ANFVolumeSnapshotStatus() {
     $finalResult += '</table><br>'
     return $finalResult 
 }
+function Show-ANFVolumeBackupStatus() {
+    #####
+    ## Display ANF Volumes and Backup Policy 
+    #####
+    $finalResult += '<h3>Volume Backup Status</h3>'
+    $finalResult += '<table>'
+    $finalResult += '<th>Volume Name</th><th>Location</th><th class="center">Backup Policy</th><th>Policy Name</th><th class="center">Policy Enabled</th><th class="center">Policy Suspended</th><th class="center">No. Backups</th>'
+        foreach($volume in $volumeDetails) {
+            $volumeBackups = @()
+            $backupCount = 0
+            $mostRecentBackupDisplay = $null
+            $oldestBackupDisplay = $null
+            $volumeBackups = Get-AzNetAppFilesBackup -ResourceGroupName $volume.ResourceId.split('/')[4] -AccountName $volume.ResourceId.split('/')[8] -PoolName $volume.ResourceId.split('/')[10] -VolumeName $volume.ResourceId.split('/')[12]
+            if($volumeBackups) {
+                $mostRecentBackupDate = $volumeBackups[0].Created
+                $oldestBackupDate = $volumeBackups[0].Created
+                foreach($volumeBackup in $volumeBackups){
+                    $BackupCount += 1
+                    if($volumeBackup.Created -gt $mostRecentBackupDate) {
+                        $mostRecentBackupDate = $volumeBackup.Created
+                    }
+                    if($volumeBackup.Created -lt $oldestBackupDate) {
+                        $oldestBackupDate = $volumeBackup.Created
+                    }
+                }
+                if($mostRecentBackupDate -le (Get-Date).AddHours(-($mostRecentBackupTooOldThreshold))) {
+                    $mostRecentBackupDisplay = '<td class="warning">' + $mostRecentBackupDate.ToString("MM-dd-yy hh:mm tt") + '</td>'
+                } else {
+                    $mostRecentBackupDisplay = '<td class="center">' + $mostRecentBackupDate.ToString("MM-dd-yy hh:mm tt") + '</td>'
+                }
+                if($oldestBackupDate -le (Get-Date).AddDays(-($oldestBackupTooOldThreshold))) {
+                    $oldestBackupDisplay = '<td class="warning">' + $oldestBackupDate.ToString("MM-dd-yy hh:mm tt") + '</td>'
+                } else {
+                    $oldestBackupDisplay = '<td class="center">' + $oldestBackupDate.ToString("MM-dd-yy hh:mm tt") + '</td>'
+                }
+            } else {
+                $mostRecentBackupDisplay = '<td class="warning">None</td>'
+                $oldestBackupDisplay = '<td class="warning">None</td>'
+            }
+            $finalResult += '<tr>' + '<td><a href="https://portal.azure.com/#@' + $Subscription.TenantId + '/resource' + $volume.ResourceId + '">' + $volume.Volume + '</a></td><td>' + $volume.Location + '</td>'
+            if($volume.BackupPolicyId) {
+                $BackupPolicyDisplay = 'Yes'
+                $finalResult += '<td class="center">' + $BackupPolicyDisplay + '</td>'
+                $finalResult += '<td>' + $volume.BackupPolicyId.split('/')[10] + '</td>'
+            } else {
+                $BackupPolicyDisplay = 'No'
+                $finalResult += '<td class="warning center">' + $BackupPolicyDisplay + '</td><td></td>'
+            }
+            $finalResult += $oldestBackupDisplay
+            $finalResult += $mostRecentBackupDisplay
+            $finalResult += '<td class="center">' + $BackupCount + '</td>'
+            $finalResult += '</tr>'
+        }
+    $finalResult += '</table><br>'
+    return $finalResult 
+}
 function Show-ANFVolumeReplicationStatus() {
     #####
     ## Display ANF Volumes and Snapshot Policy and CRR Status 
@@ -566,8 +628,9 @@ $finalResult = @'
                 </style>
                 </head>
                 <body>
-                <h2>Azure NetApp Files Health Report</h2>
 '@
+
+$finalResult += '<h2>' + $Subject + '</h2>'
 
 foreach ($Subscription in $Subscriptions) {
     
@@ -598,6 +661,7 @@ foreach ($Subscription in $Subscriptions) {
     $finalResult += Show-ANFVolumeUtilization
     $finalResult += Show-ANFVolumeUtilizationGrowth
     $finalResult += Show-ANFVolumeSnapshotStatus
+    #$finalResult += Show-ANFVolumeBackupStatus
     $finalResult += Show-ANFVolumeReplicationStatus
 }
 
