@@ -377,7 +377,7 @@ function Show-ANFVolumeUtilizationGrowth() {
     $finalResult += '<table>'
     $finalResult += '<th>Volume Name</th><th>Location</th><th class="center">Previous Consumed (GiB)</th><th class="center">Today Consumed (GiB)</th><th class="center">Change (%)</th>'
         foreach($volume in $volumeDetails | Sort-Object -Property ConsumedPercent -Descending) {
-            if($previousVolumeConsumedSizes[$volume.ResourceId] -gt 0) {
+            if($previousVolumeConsumedSizes[$volume.ResourceId] -gt 0 -and $volume.Consumed -gt 0) {
                 try {
                     $percentChange = ([Math]::Round((($volume.Consumed - [Math]::Round($previousVolumeConsumedSizes[$volume.ResourceId]/1024/1024/1024,2)) / [Math]::Round($previousVolumeConsumedSizes[$volume.ResourceId]/1024/1024/1024,2)),2)) * 100
                 }
@@ -385,14 +385,14 @@ function Show-ANFVolumeUtilizationGrowth() {
                     $percentChange = 0
                 }
                 $finalResult += '<tr><td><a href="' + $volume.URL + '">' + $volume.Volume + '</a></td><td>' + $volume.Location + '</td>'
-                $finalResult += '<td class="center">' + [Math]::Round($previousVolumeConsumedSizes[$volume.ResourceId]/1024/1024/1024,2) + '</td>'
+                $finalResult += '<td class="center">' + [Math]::Round($previousVolumeConsumedSizes[$volume.ResourceId]/1024/1024/1024,3) + '</td>'
                 $finalResult += '<td class="center">' + $volume.Consumed + '</td>'
                 $finalResult += '<td class="center">' + $percentChange + '%</td></tr>'
             } else {
                 $finalResult += '<tr><td><a href="' + $volume.URL + '">' + $volume.Volume + '</a></td><td>' + $volume.Location + '</td>'
-                $finalResult += '<td class="center">' + [Math]::Round($previousVolumeConsumedSizes[$volume.ResourceId]/1024/1024/1024,2) + '</td>'
+                $finalResult += '<td class="center">' + [Math]::Round($previousVolumeConsumedSizes[$volume.ResourceId]/1024/1024/1024,3) + '</td>'
                 $finalResult += '<td class="center">' + $volume.Consumed + '</td>'
-                $finalResult += '<td class="center">' + 'n/a' + '%</td></tr>'
+                $finalResult += '<td class="center">' + '0' + '%</td></tr>'
             }
     }
     $finalResult += '</table><br>'
@@ -460,7 +460,7 @@ function Show-ANFVolumeBackupStatus() {
     #####
     $finalResult += '<h3>Volume Backup Status</h3>'
     $finalResult += '<table>'
-    $finalResult += '<th>Volume Name</th><th>Location</th><th class="center">Backup Policy</th><th>Policy Name</th><th class="center">Policy Enabled</th><th class="center">Policy Suspended</th><th class="center">No. Backups</th>'
+    $finalResult += '<th>Volume Name</th><th>Location</th><th class="center">Policy Name</th><th class="center">Oldest Backup</th><th class="center">Newest Backup</th><th class="center">No. Backups</th>'
         foreach($volume in $volumeDetails) {
             $volumeBackups = @()
             $backupCount = 0
@@ -468,17 +468,22 @@ function Show-ANFVolumeBackupStatus() {
             $oldestBackupDisplay = $null
             $volumeBackups = Get-AzNetAppFilesBackup -ResourceGroupName $volume.ResourceId.split('/')[4] -AccountName $volume.ResourceId.split('/')[8] -PoolName $volume.ResourceId.split('/')[10] -VolumeName $volume.ResourceId.split('/')[12]
             if($volumeBackups) {
-                $mostRecentBackupDate = $volumeBackups[0].Created
-                $oldestBackupDate = $volumeBackups[0].Created
+                $mostRecentBackupDate = $volumeBackups[0].CreationDate
+                $oldestBackupDate = $volumeBackups[0].CreationDate
                 foreach($volumeBackup in $volumeBackups){
                     $BackupCount += 1
-                    if($volumeBackup.Created -gt $mostRecentBackupDate) {
-                        $mostRecentBackupDate = $volumeBackup.Created
-                    }
-                    if($volumeBackup.Created -lt $oldestBackupDate) {
-                        $oldestBackupDate = $volumeBackup.Created
+                    if($volumeBackup.CreationDate) {
+                        if($volumeBackup.CreationDate -gt $mostRecentBackupDate) {
+                            $mostRecentBackupDate = $volumeBackup.CreationDate
+                        }
+                        if($volumeBackup.CreationDate -lt $oldestBackupDate) {
+                            $oldestBackupDate = $volumeBackup.CreationDate
+                        }
                     }
                 }
+                $mostRecentBackupDisplay = '<td class="warning center">None</td>' # remove once CreationDate property is valid
+                $oldestBackupDisplay = '<td class="warning center">None</td>' # remove once CreationDate property is valid
+                <# remove comment block once CreationDate property is valid
                 if($mostRecentBackupDate -le (Get-Date).AddHours(-($mostRecentBackupTooOldThreshold))) {
                     $mostRecentBackupDisplay = '<td class="warning">' + $mostRecentBackupDate.ToString("MM-dd-yy hh:mm tt") + '</td>'
                 } else {
@@ -489,18 +494,18 @@ function Show-ANFVolumeBackupStatus() {
                 } else {
                     $oldestBackupDisplay = '<td class="center">' + $oldestBackupDate.ToString("MM-dd-yy hh:mm tt") + '</td>'
                 }
+                #>
             } else {
-                $mostRecentBackupDisplay = '<td class="warning">None</td>'
-                $oldestBackupDisplay = '<td class="warning">None</td>'
+                $mostRecentBackupDisplay = '<td class="warning center">None</td>'
+                $oldestBackupDisplay = '<td class="warning center">None</td>'
             }
+            
             $finalResult += '<tr>' + '<td><a href="https://portal.azure.com/#@' + $Subscription.TenantId + '/resource' + $volume.ResourceId + '">' + $volume.Volume + '</a></td><td>' + $volume.Location + '</td>'
             if($volume.BackupPolicyId) {
-                $BackupPolicyDisplay = 'Yes'
-                $finalResult += '<td class="center">' + $BackupPolicyDisplay + '</td>'
-                $finalResult += '<td>' + $volume.BackupPolicyId.split('/')[10] + '</td>'
+                $finalResult += '<td class="center">' + $volume.BackupPolicyId.split('/')[10] + '</td>'
             } else {
-                $BackupPolicyDisplay = 'No'
-                $finalResult += '<td class="warning center">' + $BackupPolicyDisplay + '</td><td></td>'
+                $BackupPolicyDisplay = 'None'
+                $finalResult += '<td class="warning center">' + $BackupPolicyDisplay + '</td>'
             }
             $finalResult += $oldestBackupDisplay
             $finalResult += $mostRecentBackupDisplay
@@ -514,7 +519,7 @@ function Show-ANFVolumeReplicationStatus() {
     #####
     ## Display ANF Volumes and Snapshot Policy and CRR Status 
     #####
-    $finalResult += '<h3>Volume Replication (CRR) Status</h3>'
+    $finalResult += '<h3>Volume Replication Status</h3>'
     $finalResult += '<table>'
     $finalResult += '<th>Volume Name</th><th class="center">Type</th><th>Schedule</th><th>Source Region</th><th>Target Region</th><th class="center">Healthy?</th>'
         foreach($volume in $volumeDetails | Sort-Object -Property EndpointType -Descending) {
@@ -661,12 +666,12 @@ foreach ($Subscription in $Subscriptions) {
     $finalResult += Show-ANFVolumeUtilization
     $finalResult += Show-ANFVolumeUtilizationGrowth
     $finalResult += Show-ANFVolumeSnapshotStatus
-    #$finalResult += Show-ANFVolumeBackupStatus
+    $finalResult += Show-ANFVolumeBackupStatus
     $finalResult += Show-ANFVolumeReplicationStatus
 }
 
 ## Close our body and html tags
-$finalResult += '<br><p>Created by <a href="https://github.com/seanluce">Sean Luce</a>, Cloud Solutions Architect <a href="https://cloud.netapp.com">@NetApp</a></p></body></html>'
+$finalResult += '<br><p>Created by <a href="https://github.com/seanluce">Sean Luce</a>, Technical Marketing Engineer <a href="https://cloud.netapp.com">@NetApp</a></p></body></html>'
 
 ## If you want to run this script locally use parameter -OutFile myoutput.html
 if($OutFile) {
