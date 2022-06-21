@@ -6,6 +6,9 @@ A PowerShell Runbook that will provide useful information about your Azure NetAp
 
 ## Change Log
 
+* June 21, 2022 - added 'Volume Backup Status' module to show Azure NetApp Files backup status
+* June 21, 2022 - added Capacity Pool column to all volume related modules
+* June 21, 2022 - fixed Regional Quota module to use new powershell cmdlet, Get-AzNetAppFilesQuotaLimit
 * Jan 14, 2022 - added parameter to set a custom subject line and report heading via -Subject parameter flag
 * Jan 14, 2022 - fixed regional quota API call
 * Sept 13, 2021 - added additional columns to CSV output, pool name, account, etc.
@@ -42,6 +45,7 @@ Clone this repo to run locally on your machine. Use the parameter '-OutFile myfi
 * Volume Utilization
 * Volume Utilization Growth (x days)
 * Volume Snapshot Status
+* Volume Backup Status
 * Volume Replication Status
 
 ## Planned Modules
@@ -50,7 +54,7 @@ Clone this repo to run locally on your machine. Use the parameter '-OutFile myfi
 
 ## Requirements
 
-* An SMTP server to send the emails. You can use Azure SendGrid or any other SMTP server of your choice.
+* An SMTP server to send the emails. You can use SendGrid or any other SMTP server of your choice.
 * Azure NetApp Files - of course! :D
 
 ## Need help?
