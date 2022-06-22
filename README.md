@@ -4,6 +4,10 @@
 
 A PowerShell Runbook that will provide useful information about your Azure NetApp Files (ANF) resources. Schedule this to run every day for the most up-to-date info delivered straight to your inbox.
 
+**Note** - This update requires the following updated modules:
+* Az.Accounts, v2.8.0
+* Az.NetAppFiles, v0.10.0
+
 ## Change Log
 
 * June 21, 2022 - added 'Volume Backup Status' module to show Azure NetApp Files backup status
