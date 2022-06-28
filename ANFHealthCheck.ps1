@@ -209,7 +209,7 @@ function Show-ANFRegionalProvisioned() {
     $allANFRegions = Get-AzLocation | Where-Object {$_.Providers -contains "Microsoft.NetApp"}
     $regionCapacityQuota = @{}
     foreach($region in $allANFRegions) {
-        $currentQuota = Get-AzNetAppFilesQuotaLimit -Location "eastus2" | where-object {$_.Name -like "*totalTiBsPerSubscription*"}
+        $currentQuota = Get-AzNetAppFilesQuotaLimit -Location $region.Location | where-object {$_.Name -like "*totalTiBsPerSubscription*"}
         $regionCapacityQuota.add($region.Location, $currentQuota.Current)
     }
     $finalResult += '<h3>Capacity Provisioned Against Regional Quota</h3>'
