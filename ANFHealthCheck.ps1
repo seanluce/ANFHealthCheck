@@ -244,7 +244,7 @@ function Show-ANFCapacityPoolUnderUtilized() {
     $finalResult += '<h3>Capacity Pool Utilization below ' + $poolPercentAllocatedWarning + '% (pool >= ' + $poolPercentAllocatedWarningMinSize + ' GiB)</h3>'
     $finalResult += '<table>'
     $finalResult += '<th>Pool Name</th><th>Location</th><th>Service Level</th><th>QoS Type</th><th class="center">Provisioned (GiB)</th><th class="center">Allocated (GiB)</th><th class ="center">Allocated (%)</th>'
-    foreach($poolDetail in $poolDetails | Sort-Object -Property ConsumedPercent) {
+    foreach($poolDetail in $poolDetails | Sort-Object -Property AllocatedPercent) {
         if($poolDetail.AllocatedPercent -le $poolPercentAllocatedWarning -and $poolDetail.Provisioned -gt $poolPercentAllocatedWarningMinSize) {
             $finalResult += '<tr>'
             $finalResult += '<td><a href="' + $poolDetail.URL + '">' + $poolDetail.capacityPool + '</a></td><td>' + $poolDetail.Location + '</td><td>' + $poolDetail.ServiceLevel + '</td><td>' + $poolDetail.QosType + '</td><td class = "center">' + $poolDetail.Provisioned + '</td>'
@@ -262,7 +262,7 @@ function Show-ANFCapacityPoolUtilization() {
     $finalResult += '<h3>Capacity Pool Utilization</h3>'
     $finalResult += '<table>'
     $finalResult += '<th>Pool Name</th><th>Location</th><th>Service Level</th><th>QoS Type</th><th class="center">Provisioned (GiB)</th><th class="center">Allocated (GiB)</th><th class ="center">Allocated (%)</th>'
-    foreach($poolDetail in $poolDetails | Sort-Object -Property ConsumedPercent) {
+    foreach($poolDetail in $poolDetails | Sort-Object -Property AllocatedPercent) {
         $finalResult += '<tr>'
         $finalResult += '<td><a href="' + $poolDetail.URL + '">' + $poolDetail.capacityPool + '</a></td><td>' + $poolDetail.Location + '</td><td>' + $poolDetail.ServiceLevel + '</td><td>' + $poolDetail.QosType + '</td><td class = "center">' + $poolDetail.Provisioned + '</td>'
         $finalResult += '<td class="center">' + $poolDetail.Allocated + '</td>'
