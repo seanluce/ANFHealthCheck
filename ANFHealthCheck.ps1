@@ -107,7 +107,7 @@ function Get-ANFVolumeDetails($volumeConsumedSizes) {
             Consumed = [Math]::Round($volumeConsumedSizes[$volume.ResourceId]/1024/1024/1024,2)
             Available = [Math]::Round(($volumeDetail.UsageThreshold - $volumeConsumedSizes[$volume.ResourceId])/1024/1024/1024,2)
             ConsumedPercent = $volumePercentConsumed
-            ResourceID = $volume.ResourceID
+            ResourceID = $volume.ResourceId
             SnapshotPolicyId = $volumeDetail.DataProtection.Snapshot.SnapshotPolicyId
             BackupPolicyId = $volumeDetail.DataProtection.Backup.BackupPolicyId
             BackupVaultId = $volumeDetail.DataProtection.Backup.VaultId
@@ -118,6 +118,7 @@ function Get-ANFVolumeDetails($volumeConsumedSizes) {
             ReplicationSchedule = $volumeDetail.DataProtection.Replication.ReplicationSchedule
             SubnetId = $volumeDetail.SubnetId
             Tags = $volumeDetail.Tags
+            AvsDataStore = $volumeDetail.AvsDataStore
         }
         Export-Csv -InputObject $volumeCustomObject -Append -Path volumeDetails.csv 
         $volumeObjects += $volumeCustomObject
@@ -186,6 +187,42 @@ function Get-ANFPoolDetails($poolAllocatedSizes) {
     }
     return $poolObjects
 }
+function Get-ANFAVSdatastoreVolumeDetails() {
+    $privateClouds = Get-AzVMwarePrivateCloud
+    $datastoreObjects = @()
+    foreach($privateCloud in $privateClouds){
+        $dataStoreURI = '/subscriptions/' + $Subscription.Id + '/resourceGroups/' + $privateCloud.ResourceGroupName + '/providers/Microsoft.AVS/privateClouds/' + $privateCloud.Name + '/clusters/Cluster-1/datastores?api-version=2021-12-01'
+        $listParams = @{
+            Path = $dataStoreURI
+            Method = 'GET'
+        }
+        $rawData = (Invoke-AzRestMethod @listParams).Content
+        $objectData = ConvertFrom-Json $rawData
+        foreach($datastore in $objectData.value) {
+            $datastoreDetail = Get-AzNetAppFilesVolume -ResourceId $datastore.properties.netAppVolume.Id -ErrorAction SilentlyContinue -WarningAction SilentlyContinue
+            if($datastoreDetail){
+                $datastoreCustomObject = [PSCustomObject]@{
+                    URL = 'https://portal.azure.com/#@' + $Subscription.TenantId + '/resource' + $datastore.Id
+                    datastoreId = $datastore.Id
+                    privateCloud = $datastore.Id.split('/')[8]
+                    cluster = $datastore.Id.split('/')[10]
+                    datastore = $datastore.Id.split('/')[12]
+                    volume = $datastoreDetail.name.split('/')[2]
+                    capacityPool = $datastoreDetail.name.split('/')[1]
+                    netappAccount = $datastoreDetail.name.split('/')[0]
+                    Location = $datastoreDetail.Location
+                    provisionedSize = $datastoreDetail.UsageThreshold/1024/1024/1024
+                    ResourceID = $datastoreDetail.Id
+                    SubnetId = $datastoreDetail.SubnetId
+                    Tags = $datastoreDetail.Tags
+                    AvsDataStore = $datastoreDetail.AvsDataStore
+                }
+                $datastoreObjects += $datastoreCustomObject
+            }
+        }
+    }
+    return $datastoreObjects   
+}
 function Show-ANFNetAppAccountSummary() {
     #####
     ## Display ANF NetApp Account Summary
@@ -208,9 +245,14 @@ function Show-ANFRegionalProvisioned() {
     #####
     $allANFRegions = Get-AzLocation | Where-Object {$_.Providers -contains "Microsoft.NetApp"}
     $regionCapacityQuota = @{}
-    foreach($region in $allANFRegions) {
-        $currentQuota = Get-AzNetAppFilesQuotaLimit -Location $region.Location | where-object {$_.Name -like "*totalTiBsPerSubscription*"}
-        $regionCapacityQuota.add($region.Location, $currentQuota.Current)
+    foreach($netappAccount in $netAppAccounts) {
+        try {
+            $currentQuota = Get-AzNetAppFilesQuotaLimit -Location $netappAccount.Location | where-object {$_.Name -like "*totalTiBsPerSubscription*"} -WarningAction:Ignore -EA Ignore
+            $regionCapacityQuota.add($netappAccount.Location, $currentQuota.Current)
+        }
+        catch {
+            $regionCapacityQuota.add($netappAccount.Location, 25)
+        }
     }
     $finalResult += '<h3>Capacity Provisioned Against Regional Quota</h3>'
     $finalResult += '<table>'
@@ -391,6 +433,21 @@ function Show-ANFVolumeUtilizationGrowth() {
                 $finalResult += '<td class="center">' + [Math]::Round($previousVolumeConsumedSizes[$volume.ResourceId]/1024/1024/1024,3) + '</td>'
                 $finalResult += '<td class="center">' + $volume.Consumed + '</td>'
                 $finalResult += '<td class="center">' + '0' + '%</td></tr>'
+            }
+    }
+    $finalResult += '</table><br>'
+    return $finalResult
+}
+function Show-ANFVolumeAVSDatastore() {
+    #####
+    ## Display ANF Volumes which are enabled for AVS datastore
+    #####
+    $finalResult += '<h3>Azure NetApp Files datastore for AVS</h3>'
+    $finalResult += '<table>'
+    $finalResult += '<th>Volume Name</th><th>Location</th><th>Capacity Pool</th><th>AVS datastore</th><th>Private Cloud</th><th>Cluster</th><th class="center">Provisioned (GiB)</th>'
+        foreach($datastore in $datastoreDetails) {
+            if($datastore.AvsDataStore -eq "Enabled"){
+                $finalResult += '<tr><td><a href="' + $datastore.URL + '">' + $datastore.Volume + '</a></td><td>' + $datastore.Location + '</td><td>' + $datastore.capacityPool + '</td><td>' + $datastore.AvsDataStore + '</td><td>' + $datastore.privateCloud + '</td><td>' + $datastore.cluster + '</td><td class="center">' + $datastore.ProvisionedSize + '</td>'
             }
     }
     $finalResult += '</table><br>'
@@ -651,7 +708,8 @@ foreach ($Subscription in $Subscriptions) {
     
     ## collect details for all resources
     $volumeDetails = Get-ANFVolumeDetails($volumeConsumedSizes)
-    $poolDetails = Get-ANFPoolDetails($capacityPoolAllocatedSizes)
+    $poolDetails = Get-ANFPoolDetails($capacityPoolAllocatedSizes)    
+    $datastoreDetails = Get-ANFAVSdatastoreVolumeDetails
 
     ## Generate Module Output
     $finalResult += Show-ANFNetAppAccountSummary
@@ -663,6 +721,9 @@ foreach ($Subscription in $Subscriptions) {
     $finalResult += Show-ANFVolumeUtilizationBelowThreshold
     $finalResult += Show-ANFVolumeUtilization
     $finalResult += Show-ANFVolumeUtilizationGrowth
+    if($datastoreDetails){
+        $finalResult += Show-ANFVolumeAVSDatastore
+    }
     $finalResult += Show-ANFVolumeSnapshotStatus
     $finalResult += Show-ANFVolumeBackupStatus
     $finalResult += Show-ANFVolumeReplicationStatus
