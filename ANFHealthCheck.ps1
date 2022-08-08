@@ -1,7 +1,8 @@
 param (
     [string]$subId,
     [string]$OutFile,
-    [string]$Subject = "Azure NetApp Files Health Report"
+    [string]$Subject = "Azure NetApp Files Health Report",
+    [boolean]$remediateOnly = $false #set to true if you do not want the HTML report to be generated
  )
 
 $sendMethod = "email" # choose blob or email
@@ -28,6 +29,12 @@ $regionProvisionedPercentWarning = 90 #highlight region if provisioned against q
 
 $volumeTagName = 'purpose' #name of tag to filter
 $volumeTagValue = 'restore' #value of tag to filter
+
+#Remediation
+$enableVolumeCapacityRemediation = $false #true will enable remediation and show remediation report in HTML output
+$enableVolumeCapacityRemediationDryRun = $true #false will resize volumes down to desired headroom
+$volumePercentDesiredHeadroomGlobal = 0 #Use with care as this has the potential to reduce volume sizes that are over-provisioned for performance. Consider using individual volume tags instead.
+
 
 ### TODO ###
 # time offset?
@@ -62,7 +69,6 @@ function Send-Email() {
     $Body = $finalResult
     Send-MailMessage -smtpServer $SMTPServer -Credential $credential -Usessl -Port 587 -from $EmailFrom -to $EmailTo -subject $Subject -Body $Body -BodyAsHtml -Attachments poolDetails.csv, volumeDetails.csv
 }
-
 Function Save-Blob() {
     $dateStamp = get-date -format "yyyyMMddHHmm"
     $blobName = "ANFHealthCheck_" + $dateStamp + ".html"
@@ -97,6 +103,14 @@ function Get-ANFVolumeDetails($volumeConsumedSizes) {
     foreach($volume in $volumes) {
         $volumeDetail = Get-AzNetAppFilesVolume -ResourceId $volume.ResourceId
         $volumePercentConsumed = [Math]::Round(($volumeConsumedSizes[$volume.ResourceId]/$volumeDetail.UsageThreshold)*100,2)
+        $tagDesiredHeadroom = $volumeDetail.Tags.anfhealthcheck_desired_headroom #remediation
+        if($tagDesiredHeadroom){
+            $desiredHeadroomPercent = $tagDesiredHeadroom
+        }elseif($volumePercentDesiredHeadroomGlobal -gt 0){
+            $desiredHeadroomPercent = $volumePercentDesiredHeadroomGlobal
+        }else {
+            $desiredHeadroomPercent = 0
+        }
         $volumeCustomObject = [PSCustomObject]@{
             Volume = $volumeDetail.name.split('/')[2]
             capacityPool = $volumeDetail.name.split('/')[1]
@@ -107,6 +121,8 @@ function Get-ANFVolumeDetails($volumeConsumedSizes) {
             Consumed = [Math]::Round($volumeConsumedSizes[$volume.ResourceId]/1024/1024/1024,2)
             Available = [Math]::Round(($volumeDetail.UsageThreshold - $volumeConsumedSizes[$volume.ResourceId])/1024/1024/1024,2)
             ConsumedPercent = $volumePercentConsumed
+            capacityPercentHeadroom = 100 - $volumePercentConsumed #remediation
+            desiredHeadroom = $desiredHeadroomPercent
             ResourceID = $volume.ResourceId
             SnapshotPolicyId = $volumeDetail.DataProtection.Snapshot.SnapshotPolicyId
             BackupPolicyId = $volumeDetail.DataProtection.Backup.BackupPolicyId
@@ -124,6 +140,33 @@ function Get-ANFVolumeDetails($volumeConsumedSizes) {
         $volumeObjects += $volumeCustomObject
     }
     return $volumeObjects
+}
+function ANFVolumeCapacityRemediation {
+    if($enableVolumeCapacityRemediationDryRun -eq $true) {
+        $title = '<h3>Volume Capacity Remediation (dry run only)</h3>'
+    }else {
+        $title = '<h3>Volume Capacity Remediation</h3>'
+    }
+    $finalResult += $title
+    $finalResult += '<table>'
+    $finalResult += '<th>Volume</th><th>Capacity Pool</th><th>Location</th><th>Desired Headroom</th><th>Consumed (GiB)</th><th>Previous Quota (GiB)</th><th>New Quota (GiB)</th>'
+    foreach($volume in $volumeDetails) {
+        if($volume.desiredHeadroom -gt 0 -and $volume.capacityPercentHeadroom -gt $volume.desiredHeadroom -and $volume.Provisioned -gt 100) {
+            $newQuota = $volume.consumed * (1 + ($volume.desiredHeadroom / 100))
+            if($newQuota -le 100) {
+                $newQuotaWholeGiB = 100
+            } elseif($newQuota -gt 100) {
+                $newQuotaWholeGiB = [Math]::Round($newQuota,0)
+            }
+            $finalResult += '<tr><td><a href="' + $volume.URL + '">' + $volume.Volume + '</a></td><td>' + $volume.capacityPool + '</td><td>' + $volume.Location + '</td><td>' + $volume.desiredHeadroom + '%</td><td>' + $volume.consumed + '</td><td>' + $volume.Provisioned + '</td><td>' + $newQuotaWholeGiB + '</td></tr>'
+            if($enableVolumeCapacityRemediationDryRun -eq $false) {
+                $newQuotaBytes = $newQuotaWholeGiB * 1024 * 1024 * 1024
+                Update-AzNetAppFilesVolume -ResourceId $volume.ResourceID -UsageThreshold $newquotaBytes
+            }
+        }
+    }
+    $finalResult += '</table><br>'
+    return $finalResult
 }
 function Get-ANFVolumeConsumedSizes($days) {
     #####
@@ -473,7 +516,7 @@ function Show-ANFVolumeUtilization() {
     #####
     $finalResult += '<h3>Volume Utilization</h3>'
     $finalResult += '<table>'
-    $finalResult += '<th>Volume Name</th><th>Location</th><th>Capacity Pool</th><th class="center">Provisioned (GiB)</th><th class="center">Available (GiB)</th><th class="center">Consumed (GiB)</th><th class="center">Consumed (%)</th>'
+    $finalResult += '<th>Volume Name</th><th>Location</th><th>Capacity Pool</th><th class="center">Provisioned (GiB)</th><th class="center">Available (GiB)</th><th class="center">Consumed (GiB)</th><th class="center">Consumed (%)</th><th>Desired Headroom</th>'
         foreach($volume in $volumeDetails | Sort-Object -Property ConsumedPercent -Descending) {  
             $finalResult += '<tr><td><a href="' + $volume.URL + '">' + $volume.Volume + '</a></td><td>' + $volume.Location + '</td><td>' + $volume.capacityPool + '</td><td class="center">' + $volume.Provisioned + '</td>'
             if ($volume.Available -le $volumeSpaceGiBTooLow) {
@@ -532,12 +575,12 @@ function Show-ANFVolumeUtilizationGrowth() {
                     $percentChange = 0
                 }
                 $finalResult += '<tr><td><a href="' + $volume.URL + '">' + $volume.Volume + '</a></td><td>' + $volume.Location + '</td><td>' + $volume.capacityPool + '</td>'
-                $finalResult += '<td class="center">' + [Math]::Round($previousVolumeConsumedSizes[$volume.ResourceId]/1024/1024/1024,3) + '</td>'
+                $finalResult += '<td class="center">' + [Math]::Round($previousVolumeConsumedSizes[$volume.ResourceId]/1024/1024/1024,2) + '</td>'
                 $finalResult += '<td class="center">' + $volume.Consumed + '</td>'
                 $finalResult += '<td class="center">' + $percentChange + '%</td></tr>'
             } else {
                 $finalResult += '<tr><td><a href="' + $volume.URL + '">' + $volume.Volume + '</a></td><td>' + $volume.Location + '</td><td>' + $volume.capacityPool + '</td>'
-                $finalResult += '<td class="center">' + [Math]::Round($previousVolumeConsumedSizes[$volume.ResourceId]/1024/1024/1024,3) + '</td>'
+                $finalResult += '<td class="center">' + [Math]::Round($previousVolumeConsumedSizes[$volume.ResourceId]/1024/1024/1024,2) + '</td>'
                 $finalResult += '<td class="center">' + $volume.Consumed + '</td>'
                 $finalResult += '<td class="center">' + '0' + '%</td></tr>'
             }
@@ -820,34 +863,42 @@ foreach ($Subscription in $Subscriptions) {
 
     ## Generate Module Output
     
-    $finalResult += Show-ANFNetAppAccountSummary
-    $finalResult += Show-ANFRegionalProvisioned
-    #$finalResult += Show-ANFVNetsIPUsage
-    $finalResult += Show-ANFCapacityPoolUnderUtilized
-    $finalResult += Show-ANFCapacityPoolUtilization
-    #$finalResult += Show-ANFVolumeUtilizationFilterTag
-    $finalResult += Show-ANFVolumeUtilizationAboveThreshold
-    $finalResult += Show-ANFVolumeUtilizationBelowThreshold
-    $finalResult += Show-ANFVolumeUtilization
-    $finalResult += Show-ANFVolumeUtilizationGrowth
-    if($datastoreDetails){
-        $finalResult += Show-ANFVolumeAVSDatastore
+    if($enableVolumeCapacityRemediation -eq $true) {
+        $finalResult += ANFVolumeCapacityRemediation
     }
-    $finalResult += Show-ANFVolumeSnapshotStatus
-    $finalResult += Show-ANFVolumeBackupStatus
-    $finalResult += Show-ANFVolumeReplicationStatus
+
+    if($remediateOnly -eq $false) {
+        $finalResult += Show-ANFNetAppAccountSummary
+        $finalResult += Show-ANFRegionalProvisioned
+        #$finalResult += Show-ANFVNetsIPUsage
+        $finalResult += Show-ANFCapacityPoolUnderUtilized
+        $finalResult += Show-ANFCapacityPoolUtilization
+        #$finalResult += Show-ANFVolumeUtilizationFilterTag
+        $finalResult += Show-ANFVolumeUtilizationAboveThreshold
+        $finalResult += Show-ANFVolumeUtilizationBelowThreshold
+        $finalResult += Show-ANFVolumeUtilization
+        $finalResult += Show-ANFVolumeUtilizationGrowth
+        if($datastoreDetails){
+            $finalResult += Show-ANFVolumeAVSDatastore
+        }
+        $finalResult += Show-ANFVolumeSnapshotStatus
+        $finalResult += Show-ANFVolumeBackupStatus
+        $finalResult += Show-ANFVolumeReplicationStatus
+    }
 }
 
 ## Close our body and html tags
 $finalResult += '<br><p>Created by <a href="https://github.com/seanluce">Sean Luce</a>, Technical Marketing Engineer <a href="https://cloud.netapp.com">@NetApp</a></p></body></html>'
 
 ## If you want to run this script locally use parameter -OutFile myoutput.html
-if($OutFile) {
-    $finalResult | out-file -filepath $OutFile
-} elseif($sendMethod -eq "email") {
-    Send-Email
-} else {
-    Save-Blob
+if($remediateOnly -eq $false) {
+    if($OutFile) {
+        $finalResult | out-file -filepath $OutFile
+    } elseif($sendMethod -eq "email") {
+        Send-Email
+    } else {
+        Save-Blob
+    }
 }
 
 

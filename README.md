@@ -2,7 +2,9 @@
 
 # ANFHealthCheck
 
-A PowerShell Runbook that will provide useful information about your Azure NetApp Files (ANF) resources. Schedule this to run every day for the most up-to-date info delivered straight to your inbox.
+A PowerShell Runbook that will provide useful information about the health of your Azure NetApp Files (ANF) resources and optionally remediate various issues. Schedule this to run every day for the most up-to-date info delivered straight to your inbox.
+
+
 
 **Note** - This update requires the following updated modules:
 * Az.Accounts, v2.8.0
@@ -10,6 +12,9 @@ A PowerShell Runbook that will provide useful information about your Azure NetAp
 
 ## Change Log
 
+* August 8, 2022 - added functionality to remediate volume capacity based on desired headroom, more info can be found under the 'Remediation' heading below
+* August 8, 2022 - create new module to report on IP addresses used within each VNet that contains an ANF delegated subnet
+* August 8, 2022 - created new module to show ANF/AVS datastores attached to AVS
 * June 21, 2022 - added 'Volume Backup Status' module to show Azure NetApp Files backup status
 * June 21, 2022 - added Capacity Pool column to all volume related modules
 * June 21, 2022 - fixed Regional Quota module to use new powershell cmdlet, Get-AzNetAppFilesQuotaLimit
@@ -43,7 +48,7 @@ Clone this repo to run locally on your machine. Use the parameter '-OutFile myfi
 ## Current Modules
 
 * NetApp Account Summary
-* NEW Capacity Provisioned Against Regional Quota ([more info](https://azure.microsoft.com/en-us/updates/azure-netapp-files-regional-capacity-quota/#:~:text=StartingJuly%2026%2C%202021%20Azure%20NetApp%20Files%20%E2%80%93%20likesome,25%20TiB%2C%20per%20region%2C%20across%20all%20service%20levels.))
+* Capacity Provisioned Against Regional Quota ([more info](https://azure.microsoft.com/en-us/updates/azure-netapp-files-regional-capacity-quota/#:~:text=StartingJuly%2026%2C%202021%20Azure%20NetApp%20Files%20%E2%80%93%20likesome,25%20TiB%2C%20per%20region%2C%20across%20all%20service%20levels.))
 * Capacity Pool Utilization
 * Volume Utilization Above x%
 * Volume Utilization
@@ -51,6 +56,16 @@ Clone this repo to run locally on your machine. Use the parameter '-OutFile myfi
 * Volume Snapshot Status
 * Volume Backup Status
 * Volume Replication Status
+
+## Remediation
+
+ANFHealthCheck can remediate some health issues that it finds.
+
+ANFVolumeCapacityRemediation - This function will reduce the volume quotas if the headroom is above a desired threshold. Headroom is defined as the percent free space in the volume. To specify a volume's desired headroom, apply the tag titled 'anfhealthcheck_desired_headroom' and give it an integer value of the headroom percentage desired for that volume. For example, if 20% of free space is desired, set the tag to an integer value of 20.
+
+To enable volume capacity remediation, set the variable '$enableVolumeCapacityRemediation' to $true.
+
+To enable volume capacity remediation 'dry run' mode, set the variable $enableVolumeCapacityRemediation' to $true and the variable '$enableVolumeCapacityRemediationDryRun' to $true. This will provide a report of the remediation actions required, but will not modify any resources.
 
 ## Planned Modules
 
