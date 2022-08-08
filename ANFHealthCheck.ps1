@@ -30,11 +30,16 @@ $regionProvisionedPercentWarning = 90 #highlight region if provisioned against q
 $volumeTagName = 'purpose' #name of tag to filter
 $volumeTagValue = 'restore' #value of tag to filter
 
-#Remediation
-$enableVolumeCapacityRemediation = $false #true will enable remediation and show remediation report in HTML output
+#Remediation Volume Headroom
+$enableVolumeCapacityRemediation = $true #true will enable remediation and show remediation report in HTML output
 $enableVolumeCapacityRemediationDryRun = $true #false will resize volumes down to desired headroom
 $volumePercentDesiredHeadroomGlobal = 0 #Use with care as this has the potential to reduce volume sizes that are over-provisioned for performance. Consider using individual volume tags instead.
 
+#Remediation Pool Headroom
+$enablePoolCapacityRemediation = $true #true will enable remediation and show remediation report in HTML output
+$enablePoolCapacityRemediationDryRun = $true #false will resize capacity pools down to desired headroom
+$poolPercentDesiredHeadroomGlobal = 0
+$minPoolSizeGiB = 4096 # use this to set the minimum pool size
 
 ### TODO ###
 # time offset?
@@ -101,6 +106,7 @@ function Get-ANFVolumes() {
 function Get-ANFVolumeDetails($volumeConsumedSizes) {
     $volumeObjects = @()
     foreach($volume in $volumes) {
+        $desiredHeadroomPercent = $null
         $volumeDetail = Get-AzNetAppFilesVolume -ResourceId $volume.ResourceId
         $volumePercentConsumed = [Math]::Round(($volumeConsumedSizes[$volume.ResourceId]/$volumeDetail.UsageThreshold)*100,2)
         $tagDesiredHeadroom = $volumeDetail.Tags.anfhealthcheck_desired_headroom #remediation
@@ -211,24 +217,64 @@ function Get-ANFCapacityPoolAllocatedSizes() {
 function Get-ANFPoolDetails($poolAllocatedSizes) {
     $poolObjects = @()
     foreach($pool in $capacityPools) {
+        $desiredHeadroomPercent = $null
         $poolDetail = Get-AzNetAppFilesPool -ResourceId $pool.ResourceId
         $poolPercentAllocated = [Math]::Round(($poolAllocatedSizes[$pool.ResourceId]/$poolDetail.Size)*100,2)
+        $tagDesiredHeadroom = $poolDetail.Tags.anfhealthcheck_desired_headroom #remediation
+        if($tagDesiredHeadroom){
+            $desiredHeadroomPercent = $tagDesiredHeadroom
+        }
+        if(!($desiredHeadroomPercent) -and $poolPercentDesiredHeadroomGlobal -ge 0){
+            $desiredHeadroomPercent = $poolPercentDesiredHeadroomGlobal
+        }
         $poolCustomObject = [PSCustomObject]@{
             capacityPool = $poolDetail.name.split('/')[1]
             netappAccount = $poolDetail.name.split('/')[0]
             ServiceLevel = $poolDetail.ServiceLevel
+            desiredHeadroom = $desiredHeadroomPercent
             QosType = $poolDetail.QosType
             URL = 'https://portal.azure.com/#@' + $Subscription.TenantId + '/resource' + $pool.ResourceId
             Location = $poolDetail.Location
             Provisioned = $poolDetail.Size/1024/1024/1024
             Allocated = [Math]::Round($poolAllocatedSizes[$pool.ResourceId]/1024/1024/1024,2)
             AllocatedPercent = $poolPercentAllocated
+            capacityPercentHeadroom = 100 - $poolPercentAllocated
             ResourceID = $pool.ResourceID
         }
         Export-Csv -InputObject $poolCustomObject -Append -Path poolDetails.csv 
         $poolObjects += $poolCustomObject
     }
     return $poolObjects
+}
+function ANFPoolCapacityRemediation {
+    if($enablePoolCapacityRemediationDryRun -eq $true) {
+        $title = '<h3>Capacity Pool Capacity Remediation (dry run only)</h3>'
+    }else {
+        $title = '<h3>Capacity Pool Capacity Remediation</h3>'
+    }
+    $finalResult += $title
+    $finalResult += '<table>'
+    $finalResult += '<th>Pool Name</th><th>Location</th><th>Desired Headroom</th><th>Allocated (GiB)</th><th>Previous Size (GiB)</th><th>New Size (GiB)</th>'
+    foreach($pool in $poolDetails) {
+        $newSize = $null
+        if($pool.desiredHeadroom -ge 0 -and $pool.capacityPercentHeadroom -gt $pool.desiredHeadroom -and $pool.Provisioned -gt 0) {
+            $newSize = $pool.Allocated * (1 + ($pool.desiredHeadroom / 100))
+            if($newSize -le $minPoolSizeGiB) {
+                $newSizeWholeGiB = $minPoolSizeGiB
+            } elseif($newSize -gt $minPoolSizeGiB) {
+                $newSizeWholeGiB = [Math]::Round($newSize,0)
+                if($newSizeWholeGiB % 1024 -gt 0){
+                    $newSizeWholeGiB = ([int][Math]::Floor($newSizeWholeGiB / 1024) + 1) * 1024
+                }
+            }
+            $finalResult += '<tr><td><a href="' + $pool.URL + '">' + $pool.capacityPool + '</a></td><td>' + $pool.Location + '</td><td>' + $pool.desiredHeadroom + '%</td><td>' + $pool.Allocated + '</td><td>' + $pool.Provisioned + '</td><td>' + $newSizeWholeGiB + '</td></tr>'
+            if($enableVolumeCapacityRemediationDryRun -eq $false) {
+                Update-AzNetAppFilesPool -ResourceId $pool.ResourceID -UsageThreshold $newSizeWholeGiB
+            }
+        }
+    }
+    $finalResult += '</table><br>'
+    return $finalResult
 }
 function Get-ANFAVSdatastoreVolumeDetails() {
     $privateClouds = Get-AzVMwarePrivateCloud
@@ -865,6 +911,10 @@ foreach ($Subscription in $Subscriptions) {
     
     if($enableVolumeCapacityRemediation -eq $true) {
         $finalResult += ANFVolumeCapacityRemediation
+    }
+
+    if($enablePoolCapacityRemediation -eq $true) {
+        $finalResult += ANFPoolCapacityRemediation
     }
 
     if($remediateOnly -eq $false) {

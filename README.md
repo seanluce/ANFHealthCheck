@@ -61,11 +61,19 @@ Clone this repo to run locally on your machine. Use the parameter '-OutFile myfi
 
 ANFHealthCheck can remediate some health issues that it finds.
 
-ANFVolumeCapacityRemediation - This function will reduce the volume quotas if the headroom is above a desired threshold. Headroom is defined as the percent free space in the volume. To specify a volume's desired headroom, apply the tag titled 'anfhealthcheck_desired_headroom' and give it an integer value of the headroom percentage desired for that volume. For example, if 20% of free space is desired, set the tag to an integer value of 20.
+###ANFVolumeCapacityRemediation
+This function will reduce the volume quotas if the headroom is above a desired threshold. Headroom is defined as the percent free space in the volume. To specify a volume's desired headroom, apply the tag titled 'anfhealthcheck_desired_headroom' and give it an integer value of the headroom percentage desired for that volume. For example, if 20% free space is desired, set the tag to an integer value of 20.
 
 To enable volume capacity remediation, set the variable '$enableVolumeCapacityRemediation' to $true.
 
 To enable volume capacity remediation 'dry run' mode, set the variable $enableVolumeCapacityRemediation' to $true and the variable '$enableVolumeCapacityRemediationDryRun' to $true. This will provide a report of the remediation actions required, but will not modify any resources.
+
+###ANFPoolCapacityRemediation
+This function will redice the capacity pool sizes if the headroom is above a desired threshold. Headroom is defined as the percent free space in the capacity pool that is not allocated to volumes. To specify a capacity pool's desired headroom, apply the tag titled 'anfhealthcheck_desired_headroom' and give it an integer value of the headroom percentage desired for that capacity pool. For example, if 20% free space is desired, set the tag to an integer value of 20.
+
+To enable pool capacity remediation, set the variable '$enablePoolCapacityRemediation' to $true.
+
+To enable pool capacity remediation 'dry run' mode, set the variable '$enablePoolCapacityRemediation' to $true and the variable '$enablePoolCapacityRemediationDryRun' to $true. This will provide a report of the remediation actions required, but will not modify any resources.
 
 ## Planned Modules
 
