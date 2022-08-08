@@ -223,6 +223,113 @@ function Get-ANFAVSdatastoreVolumeDetails() {
     }
     return $datastoreObjects   
 }
+function Show-ANFVNetsIPUsage() {
+    $finalResult += '<h3>Virtual Network IP Report</h3>'
+    $finalResult += '<table>'
+    $finalResult += '<th>VNet Name</th><th>Location</th><th>Resource Group</th><th class="center">VNet IPs</th><th class="center">Peered IPs</th><th class="center">Total IPs</th>'
+    $vnets = Get-AzVirtualNetwork
+    foreach($vnet in $vnets | Where-Object {$_.subnets.delegations.serviceName -eq "Microsoft.NetApp/volumes"}) {
+        $finalResult += '<tr><td>' + $vnet.Name + '</td><td>' + $vnet.Location + '</td><td>' + $vnet.ResourceGroupName + '</td>'
+        $anfvnetURI = $vnet.Id.tolower().Split("/")
+        $RG_Index = [array]::indexof($anfvneturi,"resourcegroups")
+        $SubID = $anfvneturi[$RG_Index -1]
+        $ResourceGroup = $anfvneturi[$RG_Index + 1]
+        #$ResourceProvider = $anfvneturi[$RG_Index + 3]
+        #$RP_sub_catagory = $anfvneturi[$RG_Index + 4]
+        $Resource = $anfvneturi[$RG_Index + 5]
+        #Region Variable to check for global peering
+        $region = ""
+        #Set last sub value to keep from running set-context on the first loop if they're equal
+        $lastsub = $SubID
+        #Reset/Initiate Main Vnet Variables
+        $mainVnetTotal = 0
+        $subnet = ""
+        $subnets = ""
+        $templist = ""
+        $x = 0
+        #Set Subscription Context
+        Set-AzContext -subscription $SubID *>$null
+        #Get the original VNET that was sent in via parameters
+        $ANFVNET = Get-AzVirtualNetwork -Name $Resource -ResourceGroupName $ResourceGroup
+        if ($ANFVNET.id.Length -gt 0) {
+            #Set the value to check for global peering
+            #Global peering is not supported so shouldn't count against the total.
+            $region = $ANFVNET.Location
+            #Get All Subnets IP usage
+            $subnets = Get-AzVirtualNetworkUsageList -ResourceGroupName $ResourceGroup -Name $Resource
+            foreach ($subnet in $subnets) {
+                $templist = $subnet | Select-object -Property CurrentValue
+                foreach($x in $templist) {
+                    $mainVnetTotal = $mainVnetTotal + $x.CurrentValue
+                }
+            }
+            #write-host "ANF VNet Total: " $mainVnetTotal
+            #Reset/initiate Variables for Peers
+            $subnet = ""
+            $subnets= ""
+            $peerstotal = 0
+            $templist = ""
+            $x=0
+            $peers = Get-AzVirtualNetworkPeering -VirtualNetworkName $Resource -ResourceGroupName $ResourceGroup | Sort-Object -Property RemoteVirtualNetwork
+            #ensure we have peers to work with.
+            if ($peers.count -gt 0) {
+                #Using the $peers list, loop through and perform get on the virtual network and all associated IPs.
+                foreach($peer in $peers) {
+                    $RG_Index = ""
+                    $SubID = ""
+                    $ResourceGroup = ""
+                    #$ResourceProvider = ""
+                    #$RP_sub_catagory = ""
+                    $Resource = ""
+                    #This gets the URI of the current Peer
+                    $peerVnet = $peer.RemoteVirtualNetwork.id.ToString()
+                    $peervnetURI = $peerVnet.tolower().Split("/")
+                    #this parses the current uri
+                    $RG_Index = [array]::indexof($peervnetURI,"resourcegroups")
+                    $SubID = $peervnetURI[$RG_Index -1]
+                    $ResourceGroup = $peervnetURI[$RG_Index + 1]
+                    $ResourceProvider = $peervnetURI[$RG_Index + 3]
+                    $RP_sub_catagory = $peervnetURI[$RG_Index + 4]
+                    $Resource = $peervnetURI[$RG_Index + 5]
+                    #add logic to switch subscription if it's not the same from the last run.
+                    if($lastsub -ne $SubID){
+                        Set-AzContext -subscription $SubID *>$null
+                    }
+                    #Get peered vnet
+                    try {
+                        $peeredVNet = Get-AzVirtualNetwork -Name $Resource -ResourceGroupName $ResourceGroup -ErrorAction SilentlyContinue -WarningAction SilentlyContinue
+                    }
+                    catch {
+                    }
+                    #check for global peering which is not routed, so this wouldn't go against the total.
+                    if ($region -eq $peeredVNet.Location) {
+                        #Get All Subnets IP usage from the peered vnet
+                        $subnets = Get-AzVirtualNetworkUsageList -ResourceGroupName $ResourceGroup -Name $Resource
+                        foreach ($subnet in $subnets) {
+                            $templist = $subnet | Select-object -Property CurrentValue
+                            foreach($x in $templist) {
+                                $peerstotal = $peerstotal + $x.CurrentValue
+                            }
+                        }#foreach subnet end
+                    } #end global peering check if
+                    #Set Last subscription that was used.
+                    $lastsub = $SubID
+                }
+                #write-host "Peered Vnet Total: " $peerstotal
+                $GrandTotal = $mainVnetTotal + $peerstotal
+                $finalResult += '<td class="center">' + $mainVnetTotal + '</td><td class="center">' + $peerstotal +'</td><td class="center">' + $GrandTotal + '</td></tr>'
+            }
+            else{
+            #write-host "Peered Vnet Total: No peers"
+            $GrandTotal = $mainVnetTotal
+            $finalResult += '<td class="center">' + $mainVnetTotal + '</td><td class="center">0</td><td class="center">' + $GrandTotal + '</td></tr>'
+            }
+            #Write-Host "Total: " $GrandTotal
+        }
+    }
+    $finalResult += '</table><br>'
+    return $finalResult
+}
 function Show-ANFNetAppAccountSummary() {
     #####
     ## Display ANF NetApp Account Summary
@@ -712,8 +819,10 @@ foreach ($Subscription in $Subscriptions) {
     $datastoreDetails = Get-ANFAVSdatastoreVolumeDetails
 
     ## Generate Module Output
+    
     $finalResult += Show-ANFNetAppAccountSummary
     $finalResult += Show-ANFRegionalProvisioned
+    #$finalResult += Show-ANFVNetsIPUsage
     $finalResult += Show-ANFCapacityPoolUnderUtilized
     $finalResult += Show-ANFCapacityPoolUtilization
     #$finalResult += Show-ANFVolumeUtilizationFilterTag
