@@ -71,7 +71,7 @@ To enable volume capacity remediation 'dry run' mode, set the variable $enableVo
 
 ### ANFPoolCapacityRemediation
 
-This function will redice the capacity pool sizes if the headroom is above a desired threshold. Headroom is defined as the percent free space in the capacity pool that is not allocated to volumes. To specify a capacity pool's desired headroom, apply the tag titled 'anfhealthcheck_desired_headroom' to the capacity pool and give it an integer value of the headroom percentage desired for that capacity pool. For example, if 20% free space is desired, set the tag to an integer value of 20.
+This function will reduce the capacity pool sizes if the headroom is above a desired threshold. Headroom is defined as the percent free space in the capacity pool that is not allocated to volumes. To specify a capacity pool's desired headroom, apply the tag titled 'anfhealthcheck_desired_headroom' to the capacity pool and give it an integer value of the headroom percentage desired for that capacity pool. For example, if 20% free space is desired, set the tag to an integer value of 20.
 
 To enable pool capacity remediation, set the variable '$enablePoolCapacityRemediation' to $true.
 
