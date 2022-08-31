@@ -571,7 +571,7 @@ function Show-ANFVolumeUtilization() {
     #####
     $finalResult += '<h3>Volume Utilization</h3>'
     $finalResult += '<table>'
-    $finalResult += '<th>Volume Name</th><th>Location</th><th>Capacity Pool</th><th class="center">Provisioned (GiB)</th><th class="center">Available (GiB)</th><th class="center">Consumed (GiB)</th><th class="center">Consumed (%)</th><th>Desired Headroom</th>'
+    $finalResult += '<th>Volume Name</th><th>Location</th><th>Capacity Pool</th><th class="center">Provisioned (GiB)</th><th class="center">Available (GiB)</th><th class="center">Consumed (GiB)</th><th class="center">Consumed (%)</th>'
         foreach($volume in $volumeDetails | Sort-Object -Property ConsumedPercent -Descending) {  
             $finalResult += '<tr><td><a href="' + $volume.URL + '">' + $volume.Volume + '</a></td><td>' + $volume.Location + '</td><td>' + $volume.capacityPool + '</td><td class="center">' + $volume.Provisioned + '</td>'
             if ($volume.Available -le $volumeSpaceGiBTooLow) {
