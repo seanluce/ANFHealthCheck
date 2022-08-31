@@ -48,14 +48,23 @@ $minPoolSizeGiB = 4096 # use this to set the minimum pool size
 # NFS export report
 # Dual-Protocol Report
 
-# Connects as AzureRunAsConnection from Automation to ARM
+# Connect using a Managed Service Identity
 try {
-    $connection = Get-AutomationConnection -Name AzureRunAsConnection -ErrorAction SilentlyContinue
-    Connect-AzAccount -ServicePrincipal -Tenant $connection.TenantID -ApplicationId $connection.ApplicationID -CertificateThumbprint $connection.CertificateThumbprint -ErrorAction SilentlyContinue
-}
-catch {
-    "Unable to Connect-AzAccount using these parameters. Using locally cached credentials instead."
-}
+        $AzureContext = (Connect-AzAccount -Identity).context
+    }
+catch{
+        Write-Output "There is no system-assigned user identity. Aborting."; 
+        exit
+    }
+
+# Connects as AzureRunAsConnection from Automation to ARM
+#try {
+#    $connection = Get-AutomationConnection -Name AzureRunAsConnection -ErrorAction SilentlyContinue
+#    Connect-AzAccount -ServicePrincipal -Tenant $connection.TenantID -ApplicationId $connection.ApplicationID -CertificateThumbprint $connection.CertificateThumbprint -ErrorAction SilentlyContinue
+#}
+#catch {
+#    "Unable to Connect-AzAccount using these parameters. Using locally cached credentials instead."
+#}
 
 # Connects using custom credentials if AzureRunAsConnection can't be used
 # $credentials = Get-AutomationPSCredential -Name "YOURCREDS"
