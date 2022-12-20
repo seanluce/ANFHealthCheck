@@ -262,7 +262,7 @@ function ANFPoolCapacityRemediation {
             }
             $finalResult += '<tr><td><a href="' + $pool.URL + '">' + $pool.capacityPool + '</a></td><td>' + $pool.Location + '</td><td>' + $pool.desiredHeadroom + '%</td><td>' + $pool.Allocated + '</td><td>' + $pool.Provisioned + '</td><td>' + $newSizeWholeGiB + '</td></tr>'
             if($enableVolumeCapacityRemediationDryRun -eq $false) {
-                Update-AzNetAppFilesPool -ResourceId $pool.ResourceID -PoolSize $newSizeWholeGiB
+                Update-AzNetAppFilesPool -ResourceId $pool.ResourceID -PoolSize $newSizeWholeGiB*1024*1024*1024
             }
         }
     }
