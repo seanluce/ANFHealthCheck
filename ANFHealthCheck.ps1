@@ -3,9 +3,7 @@ param (
     [string]$OutFile,
     [string]$Subject = "Azure NetApp Files Health Report",
     [boolean]$remediateOnly = $false #set to true if you do not want the HTML report to be generated
- )
-
-$sendMethod = "email" # choose blob or email
+)
 
 Import-Module Az.Accounts
 Import-Module Az.NetAppFiles
@@ -14,6 +12,7 @@ Import-Module Az.Monitor
 Import-Module Az.Storage
 
 #User Modifiable Parameters
+$sendMethod = "email" # choose blob or email
 $volumePercentFullWarning = 20 #highlight volume if consumed % is greater than or equal to
 $volumePercentUnderWarning = 10 #highlight volume if consumed % is less than or equal to
 $volumePercentUnderWarningMinSize = 0 #used with above variable to only show volumes larger than this size
@@ -27,6 +26,7 @@ $mostRecentBackupTooOldThreshold = 48 #hours, highlight snapshot date if newest 
 $volumeConsumedDaysAgo = 7 #days ago to display for volume utilization growth over time
 $regionProvisionedPercentWarning = 90 #highlight region if provisioned against quota higher than this value
 
+#Used to filter volume list for a certain tag and value
 $volumeTagName = 'purpose' #name of tag to filter
 $volumeTagValue = 'restore' #value of tag to filter
 
@@ -41,30 +41,14 @@ $enablePoolCapacityRemediationDryRun = $true #false will resize capacity pools d
 $poolPercentDesiredHeadroomGlobal = 0
 $minPoolSizeGiB = 4096 # use this to set the minimum pool size
 
-### TODO ###
-# time offset?
-# add module for detailed CRR view
-# SMB share report
-# NFS export report
-# Dual-Protocol Report
-
 # Connect using a Managed Service Identity
 try {
-        $AzureContext = (Connect-AzAccount -Identity).context
+        (Connect-AzAccount -Identity).context
     }
 catch{
-        Write-Output "There is no system-assigned user identity. Aborting."; 
+        Write-Output "There is no managed service identity. Aborting."; 
         exit
     }
-
-# Connects as AzureRunAsConnection from Automation to ARM
-#try {
-#    $connection = Get-AutomationConnection -Name AzureRunAsConnection -ErrorAction SilentlyContinue
-#    Connect-AzAccount -ServicePrincipal -Tenant $connection.TenantID -ApplicationId $connection.ApplicationID -CertificateThumbprint $connection.CertificateThumbprint -ErrorAction SilentlyContinue
-#}
-#catch {
-#    "Unable to Connect-AzAccount using these parameters. Using locally cached credentials instead."
-#}
 
 # Connects using custom credentials if AzureRunAsConnection can't be used
 # $credentials = Get-AutomationPSCredential -Name "YOURCREDS"
@@ -278,7 +262,7 @@ function ANFPoolCapacityRemediation {
             }
             $finalResult += '<tr><td><a href="' + $pool.URL + '">' + $pool.capacityPool + '</a></td><td>' + $pool.Location + '</td><td>' + $pool.desiredHeadroom + '%</td><td>' + $pool.Allocated + '</td><td>' + $pool.Provisioned + '</td><td>' + $newSizeWholeGiB + '</td></tr>'
             if($enableVolumeCapacityRemediationDryRun -eq $false) {
-                Update-AzNetAppFilesPool -ResourceId $pool.ResourceID -UsageThreshold $newSizeWholeGiB
+                Update-AzNetAppFilesPool -ResourceId $pool.ResourceID -PoolSize $newSizeWholeGiB
             }
         }
     }
