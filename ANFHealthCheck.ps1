@@ -10,6 +10,7 @@ Import-Module Az.NetAppFiles
 Import-Module Az.Resources
 Import-Module Az.Monitor
 Import-Module Az.Storage
+Import-Module Az.VMware
 
 #User Modifiable Parameters
 $sendMethod = "email" # choose blob or email
@@ -38,7 +39,7 @@ $volumePercentDesiredHeadroomGlobal = 0 #Use with care as this has the potential
 #Remediation Pool Headroom
 $enablePoolCapacityRemediation = $true #true will enable remediation and show remediation report in HTML output
 $enablePoolCapacityRemediationDryRun = $true #false will resize capacity pools down to desired headroom
-$poolPercentDesiredHeadroomGlobal = 0
+$poolPercentDesiredHeadroomGlobal = -1 #set to -1 to disable for all capacity pools unless they have the tag: anfhealthcheck_desired_headroom set to 0 or greater
 $minPoolSizeGiB = 4096 # use this to set the minimum pool size
 
 # Connect using a Managed Service Identity
@@ -58,10 +59,10 @@ function Send-Email() {
     #####
     ## Send finalResult as email
     #####
-    $Username ="YOURUSERNAME" # Your user name - found in SendGrid portal
+    $Username ="YOURUSERNAME"
     $Password = ConvertTo-SecureString "YOURSECRET" -AsPlainText -Force # SendGrid password
     $credential = New-Object System.Management.Automation.PSCredential $Username, $Password
-    $SMTPServer = "smtp.sendgrid.net"
+    $SMTPServer = "smtp.myserver.net"
     $EmailFrom = "aaa@xyz.com" # Can be anything - aaa@xyz.com
     $EmailTo = "aaa@xyz.com" # Valid recepient email address
     $Body = $finalResult
@@ -104,7 +105,7 @@ function Get-ANFVolumeDetails($volumeConsumedSizes) {
         $volumePercentConsumed = [Math]::Round(($volumeConsumedSizes[$volume.ResourceId]/$volumeDetail.UsageThreshold)*100,2)
         $tagDesiredHeadroom = $volumeDetail.Tags.anfhealthcheck_desired_headroom #remediation
         if($tagDesiredHeadroom){
-            $desiredHeadroomPercent = $tagDesiredHeadroom
+            $desiredHeadroomPercent = [int]$tagDesiredHeadroom
         }elseif($volumePercentDesiredHeadroomGlobal -gt 0){
             $desiredHeadroomPercent = $volumePercentDesiredHeadroomGlobal
         }else {
@@ -215,7 +216,7 @@ function Get-ANFPoolDetails($poolAllocatedSizes) {
         $poolPercentAllocated = [Math]::Round(($poolAllocatedSizes[$pool.ResourceId]/$poolDetail.Size)*100,2)
         $tagDesiredHeadroom = $poolDetail.Tags.anfhealthcheck_desired_headroom #remediation
         if($tagDesiredHeadroom){
-            $desiredHeadroomPercent = $tagDesiredHeadroom
+            $desiredHeadroomPercent = [int]$tagDesiredHeadroom
         }
         if(!($desiredHeadroomPercent) -and $poolPercentDesiredHeadroomGlobal -ge 0){
             $desiredHeadroomPercent = $poolPercentDesiredHeadroomGlobal
@@ -261,8 +262,8 @@ function ANFPoolCapacityRemediation {
                 }
             }
             $finalResult += '<tr><td><a href="' + $pool.URL + '">' + $pool.capacityPool + '</a></td><td>' + $pool.Location + '</td><td>' + $pool.desiredHeadroom + '%</td><td>' + $pool.Allocated + '</td><td>' + $pool.Provisioned + '</td><td>' + $newSizeWholeGiB + '</td></tr>'
-            if($enableVolumeCapacityRemediationDryRun -eq $false) {
-                Update-AzNetAppFilesPool -ResourceId $pool.ResourceID -PoolSize $newSizeWholeGiB*1024*1024*1024
+            if($enablePoolCapacityRemediationDryRun -eq $false) {
+                Update-AzNetAppFilesPool -ResourceId $pool.ResourceID -PoolSize ($newSizeWholeGiB*1024*1024*1024)
             }
         }
     }
