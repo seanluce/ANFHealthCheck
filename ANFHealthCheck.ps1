@@ -161,7 +161,7 @@ function ANFVolumeCapacityRemediation {
             $finalResult += '<tr><td><a href="' + $volume.URL + '">' + $volume.Volume + '</a></td><td>' + $volume.capacityPool + '</td><td>' + $volume.Location + '</td><td>' + $volume.desiredHeadroom + '%</td><td>' + $volume.consumed + '</td><td>' + $volume.Provisioned + '</td><td>' + $newQuotaWholeGiB + '</td></tr>'
             if($enableVolumeCapacityRemediationDryRun -eq $false) {
                 $newQuotaBytes = $newQuotaWholeGiB * 1024 * 1024 * 1024
-                Update-AzNetAppFilesVolume -ResourceId $volume.ResourceID -UsageThreshold $newquotaBytes
+                Update-AzNetAppFilesVolume -ResourceId $volume.ResourceID -UsageThreshold $newQuotaBytes
             }
         }
     }
