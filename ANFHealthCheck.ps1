@@ -261,9 +261,12 @@ function ANFPoolCapacityRemediation {
                     $newSizeWholeGiB = ([int][Math]::Floor($newSizeWholeGiB / 1024) + 1) * 1024
                 }
             }
-            $finalResult += '<tr><td><a href="' + $pool.URL + '">' + $pool.capacityPool + '</a></td><td>' + $pool.Location + '</td><td>' + $pool.desiredHeadroom + '%</td><td>' + $pool.Allocated + '</td><td>' + $pool.Provisioned + '</td><td>' + $newSizeWholeGiB + '</td></tr>'
-            if($enablePoolCapacityRemediationDryRun -eq $false) {
-                $null = Update-AzNetAppFilesPool -ResourceId $pool.ResourceID -PoolSize ($newSizeWholeGiB*1024*1024*1024)
+            if($newSizeWholeGiB -lt $pool.Provisioned){
+                $finalResult += '<tr><td><a href="' + $pool.URL + '">' + $pool.capacityPool + '</a></td><td>' + $pool.Location + '</td><td>' + $pool.desiredHeadroom + '%</td><td>' + $pool.Allocated + '</td><td>' + $pool.Provisioned + '</td><td>' + $newSizeWholeGiB + '</td></tr>'
+                if($enablePoolCapacityRemediationDryRun -eq $false) {
+                    Start-Sleep 180
+                    $null = Update-AzNetAppFilesPool -ResourceId $pool.ResourceID -PoolSize ($newSizeWholeGiB*1024*1024*1024)
+                }
             }
         }
     }
