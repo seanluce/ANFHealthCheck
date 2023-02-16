@@ -1,8 +1,12 @@
 param (
+    [parameter(mandatory=$true)]
     [string]$subId,
+    [boolean]$generateReport = $true,
+    [boolean]$remediateVolumes = $false,
+    [boolean]$remediatePools = $false,
+    [boolean]$remediateDryRun = $true,
     [string]$OutFile,
-    [string]$Subject = "Azure NetApp Files Health Report",
-    [boolean]$remediateOnly = $false #set to true if you do not want the HTML report to be generated
+    [string]$Subject = "Azure NetApp Files Health Report"
 )
 
 Import-Module Az.Accounts
@@ -13,7 +17,8 @@ Import-Module Az.Storage
 Import-Module Az.VMware
 
 #User Modifiable Parameters
-$sendMethod = "email" # choose blob or email
+$sendEmail = $true
+$sendBlob = $false
 $volumePercentFullWarning = 20 #highlight volume if consumed % is greater than or equal to
 $volumePercentUnderWarning = 10 #highlight volume if consumed % is less than or equal to
 $volumePercentUnderWarningMinSize = 0 #used with above variable to only show volumes larger than this size
@@ -32,15 +37,15 @@ $volumeTagName = 'purpose' #name of tag to filter
 $volumeTagValue = 'restore' #value of tag to filter
 
 #Remediation Volume Headroom
-$enableVolumeCapacityRemediation = $true #true will enable remediation and show remediation report in HTML output
-$enableVolumeCapacityRemediationDryRun = $true #false will resize volumes down to desired headroom
 $volumePercentDesiredHeadroomGlobal = 0 #Use with care as this has the potential to reduce volume sizes that are over-provisioned for performance. Consider using individual volume tags instead.
+$enableVolumeCapacityRemediation = $remediateVolumes #inherited from parameter
+$enableVolumeCapacityRemediationDryRun = $remediateDryRun #inherited from parameter
 
 #Remediation Pool Headroom
-$enablePoolCapacityRemediation = $true #true will enable remediation and show remediation report in HTML output
-$enablePoolCapacityRemediationDryRun = $true #false will resize capacity pools down to desired headroom
 $poolPercentDesiredHeadroomGlobal = -1 #set to -1 to disable for all capacity pools unless they have the tag: anfhealthcheck_desired_headroom set to 0 or greater
 $minPoolSizeGiB = 4096 # use this to set the minimum pool size
+$enablePoolCapacityRemediation = $remediatePools #inherited from parameter
+$enablePoolCapacityRemediationDryRun = $remediateDryRun #inherited from parameter
 
 # Connect using a Managed Service Identity
 try {
@@ -60,7 +65,7 @@ function Send-Email() {
     ## Send finalResult as email
     #####
     $Username ="YOURUSERNAME"
-    $Password = ConvertTo-SecureString "YOURSECRET" -AsPlainText -Force # SendGrid password
+    $Password = ConvertTo-SecureString "YOURSECRET" -AsPlainText -Force
     $credential = New-Object System.Management.Automation.PSCredential $Username, $Password
     $SMTPServer = "smtp.myserver.net"
     $EmailFrom = "aaa@xyz.com" # Can be anything - aaa@xyz.com
@@ -71,8 +76,8 @@ function Send-Email() {
 Function Save-Blob() {
     $dateStamp = get-date -format "yyyyMMddHHmm"
     $blobName = "ANFHealthCheck_" + $dateStamp + ".html"
-    $storageAccountRg = "sluce.rg"
-    $storageAccountName =  "seanshowback"
+    $storageAccountRg = "healthcheck.rg"
+    $storageAccountName =  "storageAccount"
     $containerName = 'anfhealthcheck' # to use Azure Static Sites, set to $web
     $finalResult | out-file -filepath $blobName
     $storageAccount = Set-AzStorageAccount -ResourceGroupName $storageAccountRg -Name $storageAccountName
@@ -801,12 +806,14 @@ function Show-ANFVolumeReplicationStatus() {
 }
 
 ## Get an array of all Azure Subscriptions
-if ($subId) {
+if($subId -eq $null){
+    exit
+} elseif($subId -eq 'ALL') {
+    $Subscriptions = Get-AzSubscription
+} elseif($subId) {
     $subArray = $subId.Split(',')
     $subArray
     $Subscriptions = Get-AzSubscription | Where-Object {$_.SubscriptionId -in $subArray}
-} else {
-    $Subscriptions = Get-AzSubscription
 }
 
 ## Add some CSS - feel free to customize to match your brand or corporate standards
@@ -914,7 +921,7 @@ foreach ($Subscription in $Subscriptions) {
         $finalResult += ANFPoolCapacityRemediation
     }
 
-    if($remediateOnly -eq $false) {
+    if($generateReport -eq $true) {
         $finalResult += Show-ANFNetAppAccountSummary
         $finalResult += Show-ANFRegionalProvisioned
         #$finalResult += Show-ANFVNetsIPUsage
@@ -938,12 +945,14 @@ foreach ($Subscription in $Subscriptions) {
 $finalResult += '<br><p>Created by <a href="https://github.com/seanluce">Sean Luce</a>, Technical Marketing Engineer <a href="https://cloud.netapp.com">@NetApp</a></p></body></html>'
 
 ## If you want to run this script locally use parameter -OutFile myoutput.html
-if($remediateOnly -eq $false) {
+if($generateReport -eq $true) {
     if($OutFile) {
         $finalResult | out-file -filepath $OutFile
-    } elseif($sendMethod -eq "email") {
+    } 
+    if($sendEmail -eq $true) {
         Send-Email
-    } else {
+    } 
+    if($sendBlob -eq $true) {
         Save-Blob
     }
 }
