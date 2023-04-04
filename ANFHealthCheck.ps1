@@ -20,6 +20,8 @@ Import-Module Az.VMware
 $sendEmail = $true
 $sendBlob = $false
 $volumePercentFullWarning = 20 #highlight volume if consumed % is greater than or equal to
+$volumeSnapshotSpaceConsumedWarning = 50 #highlight if snapshot space consumed is higher than this value in GiB
+$volumeBackupSpaceConsumedWarning = 50 #highlight if backup space consumed is higher than this value in GiB
 $volumePercentUnderWarning = 10 #highlight volume if consumed % is less than or equal to
 $volumePercentUnderWarningMinSize = 0 #used with above variable to only show volumes larger than this size
 $poolPercentAllocatedWarning = 90 #highlight pool if allocated % is less than or equal to
@@ -130,6 +132,8 @@ function Get-ANFVolumeDetails($volumeConsumedSizes) {
             desiredHeadroom = $desiredHeadroomPercent
             ResourceID = $volume.ResourceId
             SnapshotPolicyId = $volumeDetail.DataProtection.Snapshot.SnapshotPolicyId
+            SnapshotConsumed = [Math]::Round($volumeSnapshotConsumedSizes[$volume.ResourceId]/1024/1024/1024,2)
+            BackupConsumed = [Math]::Round($volumeBackupConsumedSizes[$volume.ResourceId]/1024/1024/1024,2)
             BackupPolicyId = $volumeDetail.DataProtection.Backup.BackupPolicyId
             BackupVaultId = $volumeDetail.DataProtection.Backup.VaultId
             BackupEnabled = $volumeDetail.DataProtection.Backup.BackupEnabled
@@ -191,6 +195,47 @@ function Get-ANFVolumeConsumedSizes($days) {
         $volumeConsumedSizes.add($volume.ResourceId, $consumedSize)
     }
     return $volumeConsumedSizes
+    ## Collect all Volume Consumed Sizes ##
+}
+
+function Get-ANFVolumeSnapshotConsumedSizes($days) {
+    #####
+    ## Collect all Volume Snapshot Consumed Sizes ##
+    #####
+    $volumeSnapShotConsumedSizes = @{}
+    $endTime = [datetime]::Now.AddDays(-$days)
+    $startTime = $endTime.AddMinutes(-30)
+    foreach($volume in $volumes) {
+        $snapshotConsumedSize = 0
+        $volumeSnapshotConsumedDataPoints = Get-AzMetric -ResourceId $volume.ResourceId -MetricName "VolumeSnapshotSize" -StartTime $startTime -EndTime $endTime -TimeGrain 00:5:00 -WarningAction:SilentlyContinue -EA SilentlyContinue
+        foreach($dataPoint in $volumeSnapshotConsumedDataPoints.data) {
+            if($dataPoint.Average -gt $consumedSize) {
+                $snapshotConsumedSize = $dataPoint.Average
+            }
+        }
+        $volumeSnapshotConsumedSizes.add($volume.ResourceId, $snapshotConsumedSize)
+    }
+    return $volumeSnapshotConsumedSizes
+    ## Collect all Volume Consumed Sizes ##
+}
+function Get-ANFVolumeBackupConsumedSizes($days) {
+    #####
+    ## Collect all Volume Backup Consumed Sizes ##
+    #####
+    $volumeBackupConsumedSizes = @{}
+    $endTime = [datetime]::Now.AddDays(-$days)
+    $startTime = $endTime.AddMinutes(-30)
+    foreach($volume in $volumes) {
+        $BackupConsumedSize = 0
+        $volumeBackupConsumedDataPoints = Get-AzMetric -ResourceId $volume.ResourceId -MetricName "CbsVolumeLogicalBackupBytes" -StartTime $startTime -EndTime $endTime -TimeGrain 00:5:00 -WarningAction:SilentlyContinue -EA SilentlyContinue
+        foreach($dataPoint in $volumeBackupConsumedDataPoints.data) {
+            if($dataPoint.Average -gt $consumedSize) {
+                $BackupConsumedSize = $dataPoint.Average
+            }
+        }
+        $volumeBackupConsumedSizes.add($volume.ResourceId, $BackupConsumedSize)
+    }
+    return $volumeBackupConsumedSizes
     ## Collect all Volume Consumed Sizes ##
 }
 function Get-ANFCapacityPoolAllocatedSizes() {
@@ -446,10 +491,11 @@ function Show-ANFRegionalProvisioned() {
     foreach($netappAccount in $netAppAccounts) {
         try {
             $currentQuota = Get-AzNetAppFilesQuotaLimit -Location $netappAccount.Location | where-object {$_.Name -like "*totalTiBsPerSubscription*"} -WarningAction:Ignore -EA Ignore
-            $regionCapacityQuota.add($netappAccount.Location, $currentQuota.Current)
         }
         catch {
-            $regionCapacityQuota.add($netappAccount.Location, 25)
+        }
+        if(!$regionCapacityQuota[$netappAccount.Location]) {
+            $regionCapacityQuota.add($netappAccount.Location, $currentQuota.Current)
         }
     }
     $finalResult += '<h3>Capacity Provisioned Against Regional Quota</h3>'
@@ -657,7 +703,7 @@ function Show-ANFVolumeSnapshotStatus() {
     #####
     $finalResult += '<h3>Volume Snapshot Status</h3>'
     $finalResult += '<table>'
-    $finalResult += '<th>Volume Name</th><th>Location</th><th>Capacity Pool</th><th class="center">Snapshot Policy</th><th>Policy Name</th><th class="center">Oldest Snap</th><th class="center">Newest Snap</th><th class="center">No. Snaps</th>'
+    $finalResult += '<th>Volume Name</th><th>Location</th><th>Capacity Pool</th><th class="center">Snapshot Policy</th><th class="center">Snapshot Consumed (GiB)</th><th class="center">Oldest Snap</th><th class="center">Newest Snap</th><th class="center">No. Snaps</th>'
         foreach($volume in $volumeDetails) {
             $volumeSnaps = @()
             $snapCount = 0
@@ -693,11 +739,15 @@ function Show-ANFVolumeSnapshotStatus() {
             $finalResult += '<tr>' + '<td><a href="https://portal.azure.com/#@' + $Subscription.TenantId + '/resource' + $volume.ResourceId + '">' + $volume.Volume + '</a></td><td>' + $volume.Location + '</td><td>' + $volume.capacityPool + '</td>'
             if($volume.SnapshotPolicyId) {
                 $snapshotPolicyDisplay = 'Yes'
-                $finalResult += '<td class="center">' + $snapshotPolicyDisplay + '</td>'
-                $finalResult += '<td>' + $volume.SnapshotPolicyId.split('/')[10] + '</td>'
+                $finalResult += '<td class="center">' + $volume.SnapshotPolicyId.split('/')[10] + '</td>'
             } else {
-                $snapshotPolicyDisplay = 'No'
-                $finalResult += '<td class="warning center">' + $snapshotPolicyDisplay + '</td><td></td>'
+                $snapshotPolicyDisplay = 'None'
+                $finalResult += '<td class="warning center">' + $snapshotPolicyDisplay + '</td>'
+            }
+            if($volume.SnapshotConsumed -ge $volumeSnapshotSpaceConsumedWarning) {
+                $finalResult += '<td class="warning center">' + $volume.SnapshotConsumed + '</td>'
+            } else {
+                $finalResult += '<td class="center">' + $volume.SnapshotConsumed + '</td>'
             }
             $finalResult += $oldestSnapDisplay
             $finalResult += $mostRecentSnapDisplay
@@ -713,7 +763,7 @@ function Show-ANFVolumeBackupStatus() {
     #####
     $finalResult += '<h3>Volume Backup Status</h3>'
     $finalResult += '<table>'
-    $finalResult += '<th>Volume Name</th><th>Location</th><th>Capacity Pool</th><th class="center">Policy Name</th><th class="center">Oldest Backup</th><th class="center">Newest Backup</th><th class="center">No. Backups</th>'
+    $finalResult += '<th>Volume Name</th><th>Location</th><th>Capacity Pool</th><th class="center">Policy Name</th><th class="center">Backup Consumed (GiB)</th><th class="center">Oldest Backup</th><th class="center">Newest Backup</th><th class="center">No. Backups</th>'
         foreach($volume in $volumeDetails) {
             $volumeBackups = @()
             $backupCount = 0
@@ -759,6 +809,11 @@ function Show-ANFVolumeBackupStatus() {
             } else {
                 $BackupPolicyDisplay = 'None'
                 $finalResult += '<td class="warning center">' + $BackupPolicyDisplay + '</td>'
+            }
+            if($volume.BackupConsumed -ge $volumeBackupSpaceConsumedWarning) {
+                $finalResult += '<td class="center warning">' + $volume.BackupConsumed + '</td>'
+            } else {
+                $finalResult += '<td class="center">' + $volume.BackupConsumed + '</td>'
             }
             $finalResult += $oldestBackupDisplay
             $finalResult += $mostRecentBackupDisplay
@@ -903,6 +958,8 @@ foreach ($Subscription in $Subscriptions) {
 
     ## Collect Azure Monitor Data
     $volumeConsumedSizes = Get-ANFVolumeConsumedSizes(0) ## get volume utilization from 0 days ago
+    $volumeSnapshotConsumedSizes = Get-ANFVolumeSnapshotConsumedSizes(0)
+    $volumeBackupConsumedSizes = Get-ANFVolumeBackupConsumedSizes(0)
     $previousVolumeConsumedSizes = Get-ANFVolumeConsumedSizes($volumeConsumedDaysAgo) # get volumes utilization from number of days ago
     $capacityPoolAllocatedSizes = Get-ANFCapacityPoolAllocatedSizes
     
