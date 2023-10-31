@@ -757,6 +757,7 @@ function Show-ANFVolumeSnapshotStatus() {
     $finalResult += '</table><br>'
     return $finalResult 
 }
+<#
 function Show-ANFVolumeBackupStatus() {
     #####
     ## Display ANF Volumes and Backup Policy 
@@ -781,6 +782,85 @@ function Show-ANFVolumeBackupStatus() {
                         }
                         if($volumeBackup.CreationDate -lt $oldestBackupDate) {
                             $oldestBackupDate = $volumeBackup.CreationDate
+                        }
+                    }
+                }
+                $mostRecentBackupDisplay = '<td class="warning center">None</td>' # remove once CreationDate property is valid
+                $oldestBackupDisplay = '<td class="warning center">None</td>' # remove once CreationDate property is valid
+                # remove comment block once CreationDate property is valid
+                if($mostRecentBackupDate -le (Get-Date).AddHours(-($mostRecentBackupTooOldThreshold))) {
+                    $mostRecentBackupDisplay = '<td class="warning">' + $mostRecentBackupDate.ToString("MM-dd-yy hh:mm tt") + '</td>'
+                } else {
+                    $mostRecentBackupDisplay = '<td class="center">' + $mostRecentBackupDate.ToString("MM-dd-yy hh:mm tt") + '</td>'
+                }
+                if($oldestBackupDate -le (Get-Date).AddDays(-($oldestBackupTooOldThreshold))) {
+                    $oldestBackupDisplay = '<td class="warning">' + $oldestBackupDate.ToString("MM-dd-yy hh:mm tt") + '</td>'
+                } else {
+                    $oldestBackupDisplay = '<td class="center">' + $oldestBackupDate.ToString("MM-dd-yy hh:mm tt") + '</td>'
+                }
+                #
+            } else {
+                $mostRecentBackupDisplay = '<td class="warning center">None</td>'
+                $oldestBackupDisplay = '<td class="warning center">None</td>'
+            }
+            
+            $finalResult += '<tr>' + '<td><a href="https://portal.azure.com/#@' + $Subscription.TenantId + '/resource' + $volume.ResourceId + '">' + $volume.Volume + '</a></td><td>' + $volume.Location + '</td><td>' + $volume.capacityPool + '</td>'
+            if($volume.BackupPolicyId) {
+                $finalResult += '<td class="center">' + $volume.BackupPolicyId.split('/')[10] + '</td>'
+            } else {
+                $BackupPolicyDisplay = 'None'
+                $finalResult += '<td class="warning center">' + $BackupPolicyDisplay + '</td>'
+            }
+            if($volume.BackupConsumed -ge $volumeBackupSpaceConsumedWarning) {
+                $finalResult += '<td class="center warning">' + $volume.BackupConsumed + '</td>'
+            } else {
+                $finalResult += '<td class="center">' + $volume.BackupConsumed + '</td>'
+            }
+            $finalResult += $oldestBackupDisplay
+            $finalResult += $mostRecentBackupDisplay
+            $finalResult += '<td class="center">' + $BackupCount + '</td>'
+            $finalResult += '</tr>'
+        }
+    $finalResult += '</table><br>'
+    return $finalResult 
+}
+#>
+function Show-ANFVolumeBackupStatus() {
+    #####
+    ## Display ANF Volumes and Backup Policy 
+    #####
+    $finalResult += '<h3>Volume Backup Status</h3>'
+    $finalResult += '<table>'
+    $finalResult += '<th>Volume Name</th><th>Location</th><th>Capacity Pool</th><th class="center">Policy Name</th><th class="center">Backup Consumed (GiB)</th><th class="center">Oldest Backup</th><th class="center">Newest Backup</th><th class="center">No. Backups</th>'
+        foreach($volume in $volumeDetails) {
+            $volumeBackups = @()
+            $backupCount = 0
+            $mostRecentBackupDisplay = $null
+            $oldestBackupDisplay = $null
+
+            $volumeBackupVaultURL = '/' + $volume.ResourceId.split('/')[1] + '/' + $volume.ResourceId.split('/')[2] + '/' + $volume.ResourceId.split('/')[3] + '/' + $volume.ResourceId.split('/')[4] + '/' + $volume.ResourceId.split('/')[5] + '/' + $volume.ResourceId.split('/')[6] + '/' + $volume.ResourceId.split('/')[7] + '/' + $volume.ResourceId.split('/')[8] + '/backupVaults?api-version=2023-05-01-preview'
+            $volumeBackupVaultURLContent = (Invoke-AzRestMethod -Method GET -Path $volumeBackupVaultURL).Content | ConvertFrom-JSON
+            $volumeBackupsURL = $volumeBackupVaultURLContent.value.id + '/backups?api-version=2023-05-01-preview'
+            $volumeBackups = (Invoke-AzRestMethod -Method GET -Path $volumeBackupsURL).Content | ConvertFrom-JSON
+
+            if ($volumeBackups.value.properties) {
+                $mostRecentBackupDate = ([datetime]::ParseExact($volumeBackups.value.properties[0].creationDate, 'yyyy-MM-ddTHH:mm:ssZ', $null)).ToUniversalTime()
+                $oldestBackupDate = ([datetime]::ParseExact($volumeBackups.value.properties[0].creationDate, 'yyyy-MM-ddTHH:mm:ssZ', $null)).ToUniversalTime()
+                foreach ($vol in $volumeBackups.value.properties) {
+                    if ($vol.volumeResourceId.Equals($volume.ResourceID)){
+                        $volume.ResourceID |  Add-Content -Path Debug.txt 
+                        $vol.volumeResourceId  |  Add-Content -Path Debug.txt 
+                        $vol.CreationDate |  Add-Content -Path Debug.txt 
+                        $BackupCount += 1
+                        if($vol.CreationDate) {
+                            if(([datetime]::ParseExact($vol.CreationDate, 'yyyy-MM-ddTHH:mm:ssZ', $null)).ToUniversalTime() -gt $mostRecentBackupDate) {
+                                $mostRecentBackupDate = ([datetime]::ParseExact($vol.CreationDate, 'yyyy-MM-ddTHH:mm:ssZ', $null)).ToUniversalTime()
+                                #Write-Host $mostRecentBackupDate 
+                            }
+                            if(([datetime]::ParseExact($vol.CreationDate, 'yyyy-MM-ddTHH:mm:ssZ', $null)).ToUniversalTime() -lt $oldestBackupDate) {
+                                $oldestBackupDate = ([datetime]::ParseExact($vol.CreationDate, 'yyyy-MM-ddTHH:mm:ssZ', $null)).ToUniversalTime()
+                                #Write-Host $oldestBackupDate
+                            }
                         }
                     }
                 }

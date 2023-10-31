@@ -6,10 +6,13 @@ A PowerShell Runbook that will provide useful information about the health of yo
 
 
 **Note** - This update requires the following updated modules:
-* Az.Accounts, v2.8.0
-* Az.NetAppFiles, v0.10.0
+* Az.Accounts, v2.13.1
+* Az.NetAppFiles, v0.13.1
+* Az.VMware, v0.5.0
 
 ## Change Log
+* October 31, 2023 - updated backup status module to use API until PowerShell modules are updated (Thank you, Erik!)
+* October 5, 2023 - updated tested version of Az.Accounts, Az.NetAppFiles, and Az.VMware
 * February 16, 2023 - script now disallows a null/empty value for the subscription Id ($subId), use 'ALL' to run against all subscriptions
 * February 16, 2023 - added paramters to control actions/behavior related to reporting, remediation, and remediation dry run
 * February 16, 2023 - added variables to control if the report is sent via Email and/or to Blob independently
